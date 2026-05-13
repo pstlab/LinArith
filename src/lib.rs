@@ -108,11 +108,156 @@ impl Engine {
         result
     }
 
-    fn _is_basic(&self, var: VarId) -> bool {
+    fn is_basic(&self, var: VarId) -> bool {
         self.tableau.contains_key(&var)
     }
 
-    fn _notify(&self, var: VarId) {
+    fn update(&mut self, var: VarId, new_value: InfRational) {
+        assert!(!self.is_basic(var), "Cannot directly update a basic variable");
+        assert!(&new_value >= self.lb(var) && &new_value <= self.ub(var), "New value must be within bounds");
+
+        for &watch in &self.t_watches[var.0] {
+            let delta = self.tableau[&watch].vars[&var] * (new_value - self.val(var));
+            self.assignments[watch.0] += delta;
+            self.notify(watch);
+        }
+
+        self.assignments[var.0] = new_value;
+        self.notify(var);
+    }
+
+    pub fn check(&mut self) -> Result<(), PropagationError> {
+        loop {
+            // we search for a basic variable whose value is not within its bounds..
+            let var = self.tableau.iter().find_map(|(&var, _)| {
+                if self.val(var) < self.lb(var) {
+                    Some((var, *self.lb(var)))
+                } else if self.val(var) > self.ub(var) {
+                    Some((var, *self.ub(var)))
+                } else {
+                    None
+                }
+            });
+            if let Some((leaving, val)) = var {
+                // .. if we find one, we try to pivot it with a non-basic variable that can take it back within bounds
+                if self.val(leaving) < &val {
+                    let entering = self.tableau[&leaving].vars.iter().find_map(|(&v, &coeff)| if coeff.is_positive() && self.val(v) < self.ub(v) || coeff.is_negative() && self.val(v) > self.lb(v) { Some(v) } else { None });
+                    if let Some(entering) = entering {
+                        self.pivot_and_update(entering, leaving, val);
+                    } else {
+                        let mut conflict = Vec::new();
+                        for (vr, vl) in &self.tableau[&leaving].vars {
+                            if vl.is_positive() {
+                                for reason in self.ubs[vr.0].iter().next().unwrap().1.iter() {
+                                    conflict.push(*reason);
+                                }
+                            } else if vl.is_negative() {
+                                for reason in self.lbs[vr.0].iter().next_back().unwrap().1.iter() {
+                                    conflict.push(*reason);
+                                }
+                            }
+                        }
+                        for reason in self.lbs[leaving.0].iter().next_back().unwrap().1.iter() {
+                            conflict.push(*reason);
+                        }
+                        return Err(PropagationError::Conflict(conflict));
+                    }
+                }
+                if self.val(leaving) > &val {
+                    let entering = self.tableau[&leaving].vars.iter().find_map(|(&v, &coeff)| if coeff.is_positive() && self.val(v) > self.lb(v) || coeff.is_negative() && self.val(v) < self.ub(v) { Some(v) } else { None });
+                    if let Some(entering) = entering {
+                        self.pivot_and_update(entering, leaving, val);
+                    } else {
+                        let mut conflict = Vec::new();
+                        for (vr, vl) in &self.tableau[&leaving].vars {
+                            if vl.is_positive() {
+                                for reason in self.lbs[vr.0].iter().next_back().unwrap().1.iter() {
+                                    conflict.push(*reason);
+                                }
+                            } else if vl.is_negative() {
+                                for reason in self.ubs[vr.0].iter().next().unwrap().1.iter() {
+                                    conflict.push(*reason);
+                                }
+                            }
+                        }
+                        for reason in self.ubs[leaving.0].iter().next().unwrap().1.iter() {
+                            conflict.push(*reason);
+                        }
+                        return Err(PropagationError::Conflict(conflict));
+                    }
+                }
+            } else {
+                return Ok(()); // all basic variables are within bounds, we are done
+            }
+        }
+    }
+
+    fn pivot_and_update(&mut self, entering: VarId, leaving: VarId, new_value: InfRational) {
+        assert!(self.is_basic(leaving), "Leaving variable must be basic");
+        assert!(!self.is_basic(entering), "Entering variable must be non-basic");
+
+        let theta = (new_value - self.val(leaving)) / &self.tableau[&leaving].vars[&entering];
+        self.assignments[leaving.0] = new_value;
+        self.notify(leaving);
+        self.assignments[entering.0] += theta;
+        self.notify(entering);
+
+        for &watch in &self.t_watches[entering.0] {
+            if watch != leaving
+                && let Some(row) = self.tableau.get_mut(&watch)
+            {
+                self.assignments[watch.0] += row.vars[&entering] * theta;
+                self.notify(watch);
+            }
+        }
+
+        self.pivot(entering, leaving);
+    }
+
+    fn pivot(&mut self, entering: VarId, leaving: VarId) {
+        assert!(self.is_basic(leaving), "Leaving variable must be basic");
+        assert!(!self.is_basic(entering), "Entering variable must be non-basic");
+
+        // Remove the leaving variable from the watches of all variables in its tableau row
+        for &var in self.tableau[&leaving].vars.keys() {
+            self.t_watches[var.0].remove(&leaving);
+        }
+
+        // Rewrite the leaving variable's row to express it in terms of the entering variable
+        let mut new_row = self.tableau.remove(&leaving).expect("Leaving variable must have a tableau row");
+        let coeff = new_row.vars.remove(&entering).expect("Entering variable must be in the leaving variable's row");
+        new_row /= &-coeff;
+        new_row.vars.insert(leaving, coeff.reciprocal());
+
+        // Substitute the new row into all other rows that contain the entering variable
+        let watches = std::mem::take(&mut self.t_watches[entering.0]);
+        for watch in &watches {
+            if watch != &leaving
+                && let Some(row) = self.tableau.get_mut(watch)
+            {
+                let (added, removed) = row.substitute(entering, &new_row);
+                for v in added {
+                    self.t_watches[v.0].insert(*watch);
+                }
+                for v in removed {
+                    self.t_watches[v.0].remove(watch);
+                }
+            }
+        }
+
+        // Add the new row to the tableau
+        self.new_row(entering, new_row);
+    }
+
+    fn new_row(&mut self, var: VarId, lin: Lin) {
+        assert!(!self.is_basic(var), "Variable must be non-basic to add a new row");
+        for v in lin.vars.keys() {
+            self.t_watches[v.0].insert(var);
+        }
+        self.tableau.insert(var, lin);
+    }
+
+    fn notify(&self, var: VarId) {
         if let Some(listeners) = self.listeners.get(&var) {
             for callback in listeners {
                 callback(var, self.val(var), self.lb(var), self.ub(var));
