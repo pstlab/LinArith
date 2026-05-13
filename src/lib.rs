@@ -76,6 +76,42 @@ impl Engine {
         self.ubs[var.0].iter().next().map(|(ub, _)| ub).unwrap_or(&InfRational::POSITIVE_INFINITY)
     }
 
+    pub fn lin_val(&self, lin: &Lin) -> InfRational {
+        let mut result = i_rat(lin.known_term);
+        for (&var, &coeff) in &lin.vars {
+            result += coeff * self.val(var);
+        }
+        result
+    }
+
+    pub fn lin_lb(&self, lin: &Lin) -> InfRational {
+        let mut result = i_rat(lin.known_term);
+        for (&var, &coeff) in &lin.vars {
+            if coeff.is_positive() {
+                result += coeff * self.lb(var);
+            } else {
+                result += coeff * self.ub(var);
+            }
+        }
+        result
+    }
+
+    pub fn lin_ub(&self, lin: &Lin) -> InfRational {
+        let mut result = i_rat(lin.known_term);
+        for (&var, &coeff) in &lin.vars {
+            if coeff.is_positive() {
+                result += coeff * self.ub(var);
+            } else {
+                result += coeff * self.lb(var);
+            }
+        }
+        result
+    }
+
+    fn _is_basic(&self, var: VarId) -> bool {
+        self.tableau.contains_key(&var)
+    }
+
     fn _notify(&self, var: VarId) {
         if let Some(listeners) = self.listeners.get(&var) {
             for callback in listeners {
