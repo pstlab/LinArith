@@ -31,9 +31,12 @@ pub struct Engine {
     listeners: HashMap<VarId, Vec<Callback>>,               // listeners for variable changes, indexed by variable index
 }
 
+/// An error returned when constraint propagation detects an inconsistency.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PropagationError {
-    Conflict(Vec<ConstraintId>), // The constraints that caused the conflict
+    /// The solver found a contradiction. The contained list identifies the
+    /// [`ConstraintId`]s whose bounds jointly caused the conflict.
+    Conflict(Vec<ConstraintId>),
 }
 
 impl Engine {
@@ -58,24 +61,36 @@ impl Engine {
         VarId(index)
     }
 
+    /// Allocates a new constraint slot and returns its [`ConstraintId`].
+    ///
+    /// After creation, bounds can be associated with the constraint via
+    /// [`set_lb`](Self::set_lb) / [`set_ub`](Self::set_ub) using this id as
+    /// the `reason`, and the constraint can then be activated with
+    /// [`assert`](Self::assert).
     pub fn new_constraint(&mut self) -> ConstraintId {
         let index = self.constraints.len();
         self.constraints.push(Constraint { lbs: HashMap::new(), ubs: HashMap::new() });
         ConstraintId(index)
     }
 
+    /// Returns the current assignment of `var`.
     pub fn val(&self, var: VarId) -> &InfRational {
         &self.assignments[var.0]
     }
 
+    /// Returns the tightest active lower bound of `var`,
+    /// or [`InfRational::NEGATIVE_INFINITY`] if none has been set.
     pub fn lb(&self, var: VarId) -> &InfRational {
         self.lbs[var.0].iter().next_back().map(|(lb, _)| lb).unwrap_or(&InfRational::NEGATIVE_INFINITY)
     }
 
+    /// Returns the tightest active upper bound of `var`,
+    /// or [`InfRational::POSITIVE_INFINITY`] if none has been set.
     pub fn ub(&self, var: VarId) -> &InfRational {
         self.ubs[var.0].iter().next().map(|(ub, _)| ub).unwrap_or(&InfRational::POSITIVE_INFINITY)
     }
 
+    /// Evaluates a linear expression under the current variable assignments.
     pub fn lin_val(&self, lin: &Lin) -> InfRational {
         let mut result = i_rat(lin.known_term);
         for (&var, &coeff) in &lin.vars {
@@ -84,6 +99,8 @@ impl Engine {
         result
     }
 
+    /// Computes the tightest lower bound of a linear expression given the
+    /// current variable bounds.
     pub fn lin_lb(&self, lin: &Lin) -> InfRational {
         let mut result = i_rat(lin.known_term);
         for (&var, &coeff) in &lin.vars {
@@ -96,6 +113,8 @@ impl Engine {
         result
     }
 
+    /// Computes the tightest upper bound of a linear expression given the
+    /// current variable bounds.
     pub fn lin_ub(&self, lin: &Lin) -> InfRational {
         let mut result = i_rat(lin.known_term);
         for (&var, &coeff) in &lin.vars {
@@ -108,6 +127,15 @@ impl Engine {
         result
     }
 
+    /// Asserts that `var >= lb`, attributed to the optional `reason` constraint.
+    ///
+    /// If the new lower bound exceeds the current upper bound, a
+    /// [`PropagationError::Conflict`] is returned immediately without modifying
+    /// state. Otherwise the bound is recorded and, if the non-basic variable's
+    /// current value falls below `lb`, its assignment is updated accordingly.
+    ///
+    /// # Panics
+    /// Panics if `lb` is negative infinity.
     pub fn set_lb(&mut self, var: VarId, lb: InfRational, reason: Option<ConstraintId>) -> Result<(), PropagationError> {
         assert!(lb > InfRational::NEGATIVE_INFINITY, "Lower bound cannot be negative infinity");
         let mut conflict = Vec::new();
@@ -144,6 +172,15 @@ impl Engine {
         Ok(())
     }
 
+    /// Asserts that `var <= ub`, attributed to the optional `reason` constraint.
+    ///
+    /// If the new upper bound falls below the current lower bound, a
+    /// [`PropagationError::Conflict`] is returned immediately without modifying
+    /// state. Otherwise the bound is recorded and, if the non-basic variable's
+    /// current value exceeds `ub`, its assignment is updated accordingly.
+    ///
+    /// # Panics
+    /// Panics if `ub` is positive infinity.
     pub fn set_ub(&mut self, var: VarId, ub: InfRational, reason: Option<ConstraintId>) -> Result<(), PropagationError> {
         assert!(ub < InfRational::POSITIVE_INFINITY, "Upper bound cannot be positive infinity");
         let mut conflict = Vec::new();
@@ -180,6 +217,12 @@ impl Engine {
         Ok(())
     }
 
+    /// Activates all bounds registered under `constraint`.
+    ///
+    /// Each lower/upper bound stored in the constraint is applied via
+    /// [`set_lb`](Self::set_lb) / [`set_ub`](Self::set_ub). On the first
+    /// conflict the constraint is automatically retracted and the error is
+    /// returned.
     pub fn assert(&mut self, constraint: ConstraintId) -> Result<(), PropagationError> {
         // Add the constraint's bounds to the engine
         for (var, val) in std::mem::take(&mut self.constraints[constraint.0].lbs) {
@@ -197,6 +240,10 @@ impl Engine {
         Ok(())
     }
 
+    /// Removes all bounds that were asserted by `constraint`.
+    ///
+    /// After retracting, those bounds no longer participate in conflict
+    /// detection or bound propagation.
     pub fn retract(&mut self, constraint: ConstraintId) {
         // Remove the constraint's bounds from the engine
         for (&var, &val) in &self.constraints[constraint.0].lbs {
@@ -225,6 +272,14 @@ impl Engine {
         self.notify(var);
     }
 
+    /// Runs the Simplex algorithm to restore feasibility.
+    ///
+    /// Repeatedly selects a basic variable whose assignment is outside its
+    /// bounds and pivots it with a suitable non-basic variable until all
+    /// basic variables are feasible, or a conflict is detected.
+    ///
+    /// Returns `Ok(())` when all variables are within their bounds, or
+    /// [`PropagationError::Conflict`] with the offending constraint ids.
     pub fn check(&mut self) -> Result<(), PropagationError> {
         loop {
             // we search for a basic variable whose value is not within its bounds..
@@ -364,6 +419,10 @@ impl Engine {
         }
     }
 
+    /// Registers a callback that is invoked whenever the value or bounds of
+    /// `var` change.
+    ///
+    /// The callback receives `(var, new_value, new_lb, new_ub)`.
     pub fn set_listener<F>(&mut self, var: VarId, callback: F)
     where
         F: Fn(VarId, &InfRational, &InfRational, &InfRational) + 'static,
