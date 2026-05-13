@@ -108,6 +108,105 @@ impl Engine {
         result
     }
 
+    pub fn set_lb(&mut self, var: VarId, lb: InfRational, reason: Option<ConstraintId>) -> Result<(), PropagationError> {
+        assert!(lb > InfRational::NEGATIVE_INFINITY, "Lower bound cannot be negative infinity");
+        let mut conflict = Vec::new();
+        if &lb > self.ub(var) {
+            if let Some(reason) = reason {
+                conflict.push(reason);
+            }
+            for reason in self.ubs[var.0].iter().next().unwrap().1.iter() {
+                conflict.push(*reason);
+            }
+            return Err(PropagationError::Conflict(conflict)); // Inconsistent constraint
+        }
+
+        if let Some(reason) = reason {
+            if let Some(c_lb) = self.constraints[reason.0].lbs.get(&var) {
+                if c_lb < &lb {
+                    self.lbs[var.0].remove(c_lb);
+                    self.lbs[var.0].entry(lb).or_default().insert(reason);
+                    self.constraints[reason.0].lbs.insert(var, lb);
+                }
+            } else {
+                self.constraints[reason.0].lbs.insert(var, lb);
+            }
+        }
+
+        let entry = self.lbs[var.0].entry(lb).or_default();
+        if let Some(reason) = reason {
+            entry.insert(reason);
+        }
+        if self.val(var) < &lb && !self.is_basic(var) {
+            self.update(var, lb);
+        }
+
+        Ok(())
+    }
+
+    pub fn set_ub(&mut self, var: VarId, ub: InfRational, reason: Option<ConstraintId>) -> Result<(), PropagationError> {
+        assert!(ub < InfRational::POSITIVE_INFINITY, "Upper bound cannot be positive infinity");
+        let mut conflict = Vec::new();
+        if &ub < self.lb(var) {
+            if let Some(reason) = reason {
+                conflict.push(reason);
+            }
+            for reason in self.lbs[var.0].iter().next_back().unwrap().1.iter() {
+                conflict.push(*reason);
+            }
+            return Err(PropagationError::Conflict(conflict)); // Inconsistent constraint
+        }
+
+        if let Some(reason) = reason {
+            if let Some(c_ub) = self.constraints[reason.0].ubs.get(&var) {
+                if c_ub > &ub {
+                    self.ubs[var.0].remove(c_ub);
+                    self.ubs[var.0].entry(ub).or_default().insert(reason);
+                    self.constraints[reason.0].ubs.insert(var, ub);
+                }
+            } else {
+                self.constraints[reason.0].ubs.insert(var, ub);
+            }
+        }
+
+        let entry = self.ubs[var.0].entry(ub).or_default();
+        if let Some(reason) = reason {
+            entry.insert(reason);
+        }
+        if self.val(var) > &ub && !self.is_basic(var) {
+            self.update(var, ub);
+        }
+
+        Ok(())
+    }
+
+    pub fn assert(&mut self, constraint: ConstraintId) -> Result<(), PropagationError> {
+        // Add the constraint's bounds to the engine
+        for (var, val) in std::mem::take(&mut self.constraints[constraint.0].lbs) {
+            if let Err(e) = self.set_lb(var, val, Some(constraint)) {
+                self.retract(constraint);
+                return Err(e);
+            }
+        }
+        for (var, val) in std::mem::take(&mut self.constraints[constraint.0].ubs) {
+            if let Err(e) = self.set_ub(var, val, Some(constraint)) {
+                self.retract(constraint);
+                return Err(e);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn retract(&mut self, constraint: ConstraintId) {
+        // Remove the constraint's bounds from the engine
+        for (&var, &val) in &self.constraints[constraint.0].lbs {
+            self.lbs[var.0].remove(&val);
+        }
+        for (&var, &val) in &self.constraints[constraint.0].ubs {
+            self.ubs[var.0].remove(&val);
+        }
+    }
+
     fn is_basic(&self, var: VarId) -> bool {
         self.tableau.contains_key(&var)
     }
