@@ -127,8 +127,8 @@ impl Engine {
         index
     }
 
-    /// Creates a new guard used to group constraints for later assertion or retraction.
-    pub fn new_guard(&mut self) -> GuardId {
+    /// Adds a new guard used to group constraints for later assertion or retraction.
+    pub fn add_guard(&mut self) -> GuardId {
         let index = self.guard_bounds.len();
         self.guard_bounds.push(GuardBounds::new());
         GuardId(index)
@@ -714,8 +714,8 @@ mod tests {
     fn bound_conflict() {
         let mut e = Engine::new();
         let x = e.add_var();
-        let c0 = e.new_guard();
-        let c1 = e.new_guard();
+        let c0 = e.add_guard();
+        let c1 = e.add_guard();
         assert!(e.new_le(&v(x), &c(10), Some(c0)).is_ok());
         assert!(e.new_gt(&v(x), &c(15), true, Some(c1)).is_ok());
         assert!(e.assert(c0).is_ok());
@@ -821,8 +821,8 @@ mod tests {
     fn redundant_constraint() {
         let mut e = Engine::new();
         let x = e.add_var();
-        let c0 = e.new_guard();
-        let c1 = e.new_guard();
+        let c0 = e.add_guard();
+        let c1 = e.add_guard();
         assert!(e.new_le(&v(x), &c(10), Some(c0)).is_ok());
         assert!(e.new_le(&v(x), &c(20), Some(c1)).is_ok()); // looser → redundant
         assert!(e.check().is_ok());
@@ -832,7 +832,7 @@ mod tests {
     fn shared_guard_retraction() {
         let mut e = Engine::new();
         let x = e.add_var();
-        let c0 = e.new_guard();
+        let c0 = e.add_guard();
         assert!(e.new_le(&v(x), &c(20), Some(c0)).is_ok());
         assert!(e.new_le(&v(x), &c(10), Some(c0)).is_ok());
         assert!(e.check().is_ok());
@@ -848,8 +848,8 @@ mod tests {
         let y = e.add_var();
         let z = e.add_var();
 
-        let c0 = e.new_guard();
-        let c1 = e.new_guard();
+        let c0 = e.add_guard();
+        let c1 = e.add_guard();
 
         // y >= x + 1
         assert!(e.new_ge(&v(y), &(v(x) + c(1)), Some(c0)).is_ok());
@@ -872,9 +872,9 @@ mod tests {
         let x = e.add_var();
         let y = e.add_var();
 
-        let c0 = e.new_guard();
-        let c1 = e.new_guard();
-        let c2 = e.new_guard();
+        let c0 = e.add_guard();
+        let c1 = e.add_guard();
+        let c2 = e.add_guard();
 
         // x + y >= 1
         assert!(e.new_ge(&(v(x) + v(y)), &c(1), Some(c0)).is_ok());
@@ -900,19 +900,19 @@ mod tests {
         let s1 = e.add_lin_var(vc(x, -1) + vc(y, 1)); // s1 = y - x
         let s2 = e.add_lin_var(vc(x, 1) + vc(y, 1)); // s2 = x + y
 
-        let c0 = e.new_guard();
+        let c0 = e.add_guard();
         assert!(e.new_le(&v(x), &c(-4), Some(c0)).is_ok()); // x <= -4
         assert!(e.assert(c0).is_ok());
         assert!(e.check().is_ok());
-        let c1 = e.new_guard();
+        let c1 = e.add_guard();
         assert!(e.new_ge(&v(x), &c(-8), Some(c1)).is_ok()); // x >= -8
         assert!(e.assert(c1).is_ok());
         assert!(e.check().is_ok());
-        let c2 = e.new_guard();
+        let c2 = e.add_guard();
         assert!(e.new_le(&v(s1), &c(1), Some(c2)).is_ok()); // s1 <= 1
         assert!(e.assert(c2).is_ok());
         assert!(e.check().is_ok());
-        let c3 = e.new_guard();
+        let c3 = e.add_guard();
         assert!(e.new_ge(&v(s2), &c(-3), Some(c3)).is_ok()); // s2 >= -3
         assert!(e.assert(c3).is_ok());
         let Err(PropagationError::Conflict(conflict)) = e.check() else { panic!("expected conflict") };
@@ -925,7 +925,7 @@ mod tests {
     fn add_retract_readd() {
         let mut e = Engine::new();
         let x = e.add_var();
-        let c0 = e.new_guard();
+        let c0 = e.add_guard();
         // Add constraint: x >= 5
         assert!(e.new_ge(&v(x), &c(5), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
@@ -952,8 +952,8 @@ mod tests {
     fn tightening_bound() {
         let mut e = Engine::new();
         let x = e.add_var();
-        let c0 = e.new_guard();
-        let c1 = e.new_guard();
+        let c0 = e.add_guard();
+        let c1 = e.add_guard();
         assert!(e.new_le(&v(x), &c(20), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
         assert!(e.new_le(&v(x), &c(10), Some(c1)).is_ok()); // tighter
@@ -996,8 +996,8 @@ mod tests {
     fn test_set_lb_tightening() {
         let mut e = Engine::new();
         let x = e.add_var();
-        let c0 = e.new_guard();
-        let c1 = e.new_guard();
+        let c0 = e.add_guard();
+        let c1 = e.add_guard();
 
         // Set initial lower bound
         assert!(e.new_ge(&v(x), &c(5), Some(c0)).is_ok());
@@ -1019,8 +1019,8 @@ mod tests {
     fn test_set_ub_tightening() {
         let mut e = Engine::new();
         let x = e.add_var();
-        let c0 = e.new_guard();
-        let c1 = e.new_guard();
+        let c0 = e.add_guard();
+        let c1 = e.add_guard();
 
         // Set initial upper bound
         assert!(e.new_le(&v(x), &c(10), Some(c0)).is_ok());
@@ -1047,8 +1047,8 @@ mod tests {
         // Make y basic: y = x + 5
         assert!(e.new_eq(&v(y), &(v(x) + c(5)), None).is_ok());
 
-        let c0 = e.new_guard();
-        let c1 = e.new_guard();
+        let c0 = e.add_guard();
+        let c1 = e.add_guard();
 
         // Constrain x: x <= 0
         assert!(e.new_le(&v(x), &c(0), Some(c0)).is_ok());
@@ -1065,7 +1065,7 @@ mod tests {
     fn test_assert_method() {
         let mut e = Engine::new();
         let x = e.add_var();
-        let c0 = e.new_guard();
+        let c0 = e.add_guard();
 
         // Manually set bounds on constraint
         e.guard_bounds[c0.0].lbs.insert(x, i_rat(r(5)));
@@ -1081,8 +1081,8 @@ mod tests {
     fn test_assert_conflicting_constraint() {
         let mut e = Engine::new();
         let x = e.add_var();
-        let c0 = e.new_guard();
-        let c1 = e.new_guard();
+        let c0 = e.add_guard();
+        let c1 = e.add_guard();
 
         // Set initial bounds
         e.guard_bounds[c0.0].lbs.insert(x, i_rat(r(10)));
