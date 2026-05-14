@@ -216,19 +216,26 @@ impl Engine {
         }
 
         if let Some(guard) = guard {
-            if let Some(c_lb) = self.guard_bounds[guard.0].lbs.get(&var)
-                && c_lb < &lb
-            {
-                self.lbs[var.0].remove(c_lb);
+            if let Some(c_lb) = self.guard_bounds[guard.0].lbs.get(&var) {
+                if *c_lb < lb {
+                    if if let Some(guards) = self.lbs[var.0].get_mut(&c_lb) {
+                        guards.remove(&guard);
+                        guards.is_empty()
+                    } else {
+                        false
+                    } {
+                        self.lbs[var.0].remove(&c_lb);
+                    }
+                    self.lbs[var.0].entry(lb).or_default().insert(guard);
+                }
+            } else {
                 self.lbs[var.0].entry(lb).or_default().insert(guard);
             }
             self.guard_bounds[guard.0].set_lb(var, lb);
+        } else {
+            self.lbs[var.0].entry(lb).or_default();
         }
 
-        let entry = self.lbs[var.0].entry(lb).or_default();
-        if let Some(guard) = guard {
-            entry.insert(guard);
-        }
         if self.val(var) < &lb && !self.is_basic(var) {
             self.update(var, lb);
         }
@@ -259,19 +266,26 @@ impl Engine {
         }
 
         if let Some(guard) = guard {
-            if let Some(c_ub) = self.guard_bounds[guard.0].ubs.get(&var)
-                && c_ub > &ub
-            {
-                self.ubs[var.0].remove(c_ub);
+            if let Some(c_ub) = self.guard_bounds[guard.0].ubs.get(&var) {
+                if *c_ub > ub {
+                    if if let Some(guards) = self.ubs[var.0].get_mut(&c_ub) {
+                        guards.remove(&guard);
+                        guards.is_empty()
+                    } else {
+                        false
+                    } {
+                        self.ubs[var.0].remove(&c_ub);
+                    }
+                    self.ubs[var.0].entry(ub).or_default().insert(guard);
+                }
+            } else {
                 self.ubs[var.0].entry(ub).or_default().insert(guard);
             }
             self.guard_bounds[guard.0].set_ub(var, ub);
+        } else {
+            self.ubs[var.0].entry(ub).or_default();
         }
 
-        let entry = self.ubs[var.0].entry(ub).or_default();
-        if let Some(guard) = guard {
-            entry.insert(guard);
-        }
         if self.val(var) > &ub && !self.is_basic(var) {
             self.update(var, ub);
         }
@@ -1016,6 +1030,28 @@ mod tests {
     }
 
     #[test]
+    fn test_set_lb_looser_does_not_leave_stale_bound_after_retract() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let c0 = e.add_guard();
+
+        assert!(e.new_ge(&v(x), &c(5), Some(c0)).is_ok());
+        assert!(e.assert(c0).is_ok());
+        assert_eq!(e.lb(x), &i_rat(r(5)));
+
+        assert!(e.set_lb(x, i_rat(r(7)), Some(c0)).is_ok());
+        assert!(e.assert(c0).is_ok());
+        assert_eq!(e.lb(x), &i_rat(r(7)));
+
+        assert!(e.set_lb(x, i_rat(r(6)), Some(c0)).is_ok());
+        assert!(e.assert(c0).is_ok());
+        assert_eq!(e.lb(x), &i_rat(r(7)));
+
+        e.retract(c0);
+        assert_eq!(e.lb(x), &InfRational::NEGATIVE_INFINITY);
+    }
+
+    #[test]
     fn test_set_ub_tightening() {
         let mut e = Engine::new();
         let x = e.add_var();
@@ -1036,6 +1072,28 @@ mod tests {
         assert!(e.set_ub(x, i_rat(r(9)), Some(c1)).is_ok());
         assert!(e.assert(c1).is_ok());
         assert_eq!(e.ub(x), &i_rat(r(8))); // Still 8
+    }
+
+    #[test]
+    fn test_set_ub_looser_does_not_leave_stale_bound_after_retract() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let c0 = e.add_guard();
+
+        assert!(e.new_le(&v(x), &c(10), Some(c0)).is_ok());
+        assert!(e.assert(c0).is_ok());
+        assert_eq!(e.ub(x), &i_rat(r(10)));
+
+        assert!(e.set_ub(x, i_rat(r(8)), Some(c0)).is_ok());
+        assert!(e.assert(c0).is_ok());
+        assert_eq!(e.ub(x), &i_rat(r(8)));
+
+        assert!(e.set_ub(x, i_rat(r(9)), Some(c0)).is_ok());
+        assert!(e.assert(c0).is_ok());
+        assert_eq!(e.ub(x), &i_rat(r(8)));
+
+        e.retract(c0);
+        assert_eq!(e.ub(x), &InfRational::POSITIVE_INFINITY);
     }
 
     #[test]
