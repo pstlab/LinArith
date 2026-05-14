@@ -166,6 +166,10 @@ impl Engine {
         result
     }
 
+    pub fn overlap(&self, lhs: VarId, rhs: VarId) -> bool {
+        self.lb(lhs) < self.ub(rhs) && self.lb(rhs) < self.ub(lhs)
+    }
+
     /// Asserts that `var >= lb`, attributed to the optional `reason` constraint.
     ///
     /// If the new lower bound exceeds the current upper bound, a
@@ -590,5 +594,572 @@ impl fmt::Display for Engine {
             writeln!(f, "{} = {}", var, lin)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::lin::{c, v, vc};
+
+    use super::*;
+
+    #[test]
+    fn engine_creation_and_variables() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let y = e.add_var();
+        assert_eq!(x, VarId(0));
+        assert_eq!(y, VarId(1));
+        assert_eq!(e.val(x), &InfRational::ZERO);
+        assert_eq!(e.lb(x), &InfRational::NEGATIVE_INFINITY);
+        assert_eq!(e.ub(x), &InfRational::POSITIVE_INFINITY);
+    }
+
+    #[test]
+    fn constant_le_satisfied() {
+        let mut e = Engine::new();
+        assert!(e.new_le(&c(5), &c(10), None).is_ok()); // 5 <= 10
+        assert!(e.check().is_ok());
+    }
+
+    #[test]
+    fn constant_le_unsat() {
+        let mut e = Engine::new();
+        assert!(e.new_le(&c(10), &c(5), None).is_err()); // 10 <= 5
+    }
+
+    #[test]
+    fn constant_lt_strict_vs_nonstrict() {
+        let mut e = Engine::new();
+        assert!(e.new_lt(&c(0), &c(0), false, None).is_ok()); // 0 <= 0 → true
+        assert!(e.new_lt(&c(0), &c(0), true, None).is_err()); // 0 < 0 → false
+        assert!(e.new_lt(&c(-1), &c(0), true, None).is_ok()); // -1 < 0 → true
+    }
+
+    #[test]
+    fn constant_gt_ge() {
+        let mut e = Engine::new();
+        assert!(e.new_ge(&c(10), &c(5), None).is_ok()); // 10 >= 5
+        assert!(e.new_gt(&c(10), &c(5), false, None).is_ok()); // 10 >= 5 (non-strict)
+        assert!(e.new_gt(&c(10), &c(5), true, None).is_ok()); // 10 > 5
+        assert!(e.new_gt(&c(5), &c(10), true, None).is_err()); // 5 > 10 → false
+    }
+
+    #[test]
+    fn constant_eq() {
+        let mut e = Engine::new();
+        assert!(e.new_eq(&c(7), &c(7), None).is_ok());
+        assert!(e.new_eq(&c(7), &c(8), None).is_err());
+    }
+
+    #[test]
+    fn single_var_le_sets_ub() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        assert!(e.new_le(&v(x), &c(10), None).is_ok()); // x <= 10
+        assert!(e.ub(x) <= &i_rat(r(10))); // or exact depending on inf()
+        assert!(e.check().is_ok());
+    }
+
+    #[test]
+    fn single_var_gt_sets_lb() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        assert!(e.new_gt(&v(x), &c(5), true, None).is_ok()); // x > 5
+        assert!(e.lb(x) >= &i_rat(r(5))); // adjusted for strict
+        assert!(e.check().is_ok());
+    }
+
+    #[test]
+    fn single_var_eq_sets_exact() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        assert!(e.new_eq(&v(x), &c(42), None).is_ok());
+        assert_eq!(e.lb(x), e.ub(x));
+        assert_eq!(e.val(x), &i_rat(r(42)));
+    }
+
+    #[test]
+    fn bound_conflict() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let c0 = e.new_constraint();
+        let c1 = e.new_constraint();
+        assert!(e.new_le(&v(x), &c(10), Some(c0)).is_ok());
+        assert!(e.new_gt(&v(x), &c(15), true, Some(c1)).is_ok());
+        assert!(e.assert(c0).is_ok());
+        let Err(PropagationError::Conflict(conflict)) = e.assert(c1) else { panic!("expected conflict") };
+        assert!(conflict.contains(&c0));
+        assert!(conflict.contains(&c1));
+    }
+
+    #[test]
+    fn two_var_le_creates_slack() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let y = e.add_var();
+        // x + y <= 5
+        let lhs = vc(x, 1) + vc(y, 1);
+        assert!(e.new_le(&lhs, &c(5), None).is_ok());
+        assert!(e.check().is_ok());
+        assert!(e.ub(VarId(e.assignments.len() - 1)) <= &i_rat(r(5))); // slack ub
+    }
+
+    #[test]
+    fn substitution_basic_var() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let y = e.add_var();
+        assert!(e.new_eq(&v(x), &(v(y) + c(3)), None).is_ok()); // x = y + 3  (adjust)
+        assert!(e.new_lt(&v(y), &c(0), false, None).is_ok()); // y <= 0
+        assert!(e.check().is_ok());
+        // x should now be <= 3
+    }
+
+    #[test]
+    fn check_pivots_to_feasibility() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let y = e.add_var();
+        // Make y basic: y = 10 - x
+        assert!(e.new_eq(&v(y), &(c(10) - v(x)), None).is_ok());
+        // Violate y >= 12
+        assert!(e.new_ge(&v(y), &c(12), None).is_ok());
+        assert!(e.check().is_ok());
+    }
+
+    #[test]
+    fn unsat_after_failed_pivot() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        assert!(e.new_le(&v(x), &c(0), None).is_ok());
+        let Err(PropagationError::Conflict(conflict)) = e.new_gt(&v(x), &c(10), false, None) else { panic!("expected conflict") };
+        assert!(conflict.is_empty()); // no named constraints
+    }
+
+    #[test]
+    fn strict_adjustment() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        assert!(e.new_lt(&v(x), &c(0), true, None).is_ok());
+        assert!(e.check().is_ok());
+    }
+
+    #[test]
+    fn listener_called_on_update() {
+        use std::sync::{Arc, Mutex};
+
+        let mut engine = Engine::new();
+        let a = engine.add_var();
+
+        let called = Arc::new(Mutex::new(false));
+        let called_clone = Arc::clone(&called);
+
+        engine.set_listener(a, move |var, val, _lb, _ub| {
+            assert_eq!(var, a);
+            assert_eq!(val, &i_rat(r(5)));
+            *called_clone.lock().unwrap() = true;
+        });
+
+        assert!(engine.new_eq(&v(a), &c(5), None).is_ok());
+        assert!(engine.check().is_ok());
+        assert!(*called.lock().unwrap());
+    }
+
+    #[test]
+    fn overlap_test() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let y = e.add_var();
+        assert!(e.overlap(x, y)); // both [-inf, +inf]
+
+        assert!(e.new_le(&v(x), &c(10), None).is_ok());
+        assert!(e.new_ge(&v(y), &c(20), None).is_ok());
+        assert!(!e.overlap(x, y)); // [?,10] and [20,?] no overlap
+    }
+
+    #[test]
+    fn display_works() {
+        let mut e = Engine::new();
+        let _ = e.add_var();
+        let s = format!("{}", e);
+        assert!(!s.is_empty());
+    }
+
+    #[test]
+    fn redundant_constraint() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let c0 = e.new_constraint();
+        let c1 = e.new_constraint();
+        assert!(e.new_le(&v(x), &c(10), Some(c0)).is_ok());
+        assert!(e.new_le(&v(x), &c(20), Some(c1)).is_ok()); // looser → redundant
+        assert!(e.check().is_ok());
+    }
+
+    #[test]
+    fn shared_reason_retraction() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let c0 = e.new_constraint();
+        assert!(e.new_le(&v(x), &c(20), Some(c0)).is_ok());
+        assert!(e.new_le(&v(x), &c(10), Some(c0)).is_ok());
+        assert!(e.check().is_ok());
+        e.retract(c0);
+        assert_eq!(e.ub(x), &InfRational::POSITIVE_INFINITY);
+        assert_eq!(e.lb(x), &InfRational::NEGATIVE_INFINITY);
+    }
+
+    #[test]
+    fn chained_retraction() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let y = e.add_var();
+        let z = e.add_var();
+
+        let c0 = e.new_constraint();
+        let c1 = e.new_constraint();
+
+        // y >= x + 1
+        assert!(e.new_ge(&v(y), &(v(x) + c(1)), Some(c0)).is_ok());
+        // z >= y + 1
+        assert!(e.new_ge(&v(z), &(v(y) + c(1)), Some(c1)).is_ok());
+        assert!(e.check().is_ok());
+        e.retract(c0);
+        // After retracting c0, y and z should no longer have the bounds that depended on c0
+        assert_eq!(e.lb(y), &InfRational::NEGATIVE_INFINITY);
+        assert_eq!(e.lb(z), &InfRational::NEGATIVE_INFINITY);
+
+        // x >= z + 1
+        assert!(e.new_ge(&v(x), &(v(z) + c(1)), None).is_ok());
+        assert!(e.check().is_ok());
+    }
+
+    #[test]
+    fn conflict_explanation_generation() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let y = e.add_var();
+
+        let c0 = e.new_constraint();
+        let c1 = e.new_constraint();
+        let c2 = e.new_constraint();
+
+        // x + y >= 1
+        assert!(e.new_ge(&(v(x) + v(y)), &c(1), Some(c0)).is_ok());
+        assert!(e.assert(c0).is_ok());
+        // x >= 2
+        assert!(e.new_ge(&v(x), &c(2), Some(c1)).is_ok());
+        assert!(e.assert(c1).is_ok());
+        assert!(e.check().is_ok());
+
+        // x + y <= 0
+        assert!(e.new_le(&(v(x) + v(y)), &c(0), Some(c2)).is_ok());
+        assert!(e.assert(c2).is_ok());
+        let Err(PropagationError::Conflict(conflict)) = e.check() else { panic!("expected conflict") };
+        assert!(conflict.contains(&c0));
+        assert!(conflict.contains(&c2));
+    }
+
+    #[test]
+    fn complex_conflict_explanation_generation() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let y = e.add_var();
+        let s1 = e.add_lin_var(vc(x, -1) + vc(y, 1)); // s1 = y - x
+        let s2 = e.add_lin_var(vc(x, 1) + vc(y, 1)); // s2 = x + y
+
+        let c0 = e.new_constraint();
+        assert!(e.new_le(&v(x), &c(-4), Some(c0)).is_ok()); // x <= -4
+        assert!(e.assert(c0).is_ok());
+        assert!(e.check().is_ok());
+        let c1 = e.new_constraint();
+        assert!(e.new_ge(&v(x), &c(-8), Some(c1)).is_ok()); // x >= -8
+        assert!(e.assert(c1).is_ok());
+        assert!(e.check().is_ok());
+        let c2 = e.new_constraint();
+        assert!(e.new_le(&v(s1), &c(1), Some(c2)).is_ok()); // s1 <= 1
+        assert!(e.assert(c2).is_ok());
+        assert!(e.check().is_ok());
+        let c3 = e.new_constraint();
+        assert!(e.new_ge(&v(s2), &c(-3), Some(c3)).is_ok()); // s2 >= -3
+        assert!(e.assert(c3).is_ok());
+        let Err(PropagationError::Conflict(conflict)) = e.check() else { panic!("expected conflict") };
+        assert!(conflict.contains(&c0));
+        assert!(conflict.contains(&c2));
+        assert!(conflict.contains(&c3));
+    }
+
+    #[test]
+    fn add_retract_readd() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let c0 = e.new_constraint();
+        // Add constraint: x >= 5
+        assert!(e.new_ge(&v(x), &c(5), Some(c0)).is_ok());
+        assert!(e.assert(c0).is_ok());
+        assert!(e.check().is_ok());
+        assert!(e.lb(x) == &i_rat(r(5)));
+        assert!(e.ub(x) == &InfRational::POSITIVE_INFINITY);
+        assert!(e.val(x) >= &i_rat(r(5)));
+
+        // Retract constraint
+        e.retract(c0);
+        assert!(e.check().is_ok());
+        assert!(e.lb(x) == &InfRational::NEGATIVE_INFINITY);
+        assert!(e.ub(x) == &InfRational::POSITIVE_INFINITY);
+
+        // Re-add the same constraint
+        assert!(e.assert(c0).is_ok());
+        assert!(e.check().is_ok());
+        assert!(e.lb(x) == &i_rat(r(5)));
+        assert!(e.ub(x) == &InfRational::POSITIVE_INFINITY);
+        assert!(e.val(x) >= &i_rat(r(5)));
+    }
+
+    #[test]
+    fn tightening_bound() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let c0 = e.new_constraint();
+        let c1 = e.new_constraint();
+        assert!(e.new_le(&v(x), &c(20), Some(c0)).is_ok());
+        assert!(e.assert(c0).is_ok());
+        assert!(e.new_le(&v(x), &c(10), Some(c1)).is_ok()); // tighter
+        assert!(e.assert(c1).is_ok());
+        assert!(e.ub(x) <= &i_rat(r(10)));
+    }
+
+    #[test]
+    fn test_default_trait() {
+        let e = Engine::default();
+        assert_eq!(e.assignments.len(), 0);
+        assert_eq!(e.constraints.len(), 0);
+    }
+
+    #[test]
+    fn test_lin_lb_with_negative_coefficients() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let y = e.add_var();
+
+        // Set bounds: x in [2, 5], y in [3, 7]
+        assert!(e.new_ge(&v(x), &c(2), None).is_ok());
+        assert!(e.new_le(&v(x), &c(5), None).is_ok());
+        assert!(e.new_ge(&v(y), &c(3), None).is_ok());
+        assert!(e.new_le(&v(y), &c(7), None).is_ok());
+
+        // Test lin_lb with negative coefficient: 10 - 2*x + 3*y
+        // lb = 10 - 2*ub(x) + 3*lb(y) = 10 - 2*5 + 3*3 = 10 - 10 + 9 = 9
+        let lin = c(10) + vc(x, -2) + vc(y, 3);
+        let lb = e.lin_lb(&lin);
+        assert_eq!(lb, i_rat(r(9)));
+
+        // Test lin_ub with negative coefficient
+        // ub = 10 - 2*lb(x) + 3*ub(y) = 10 - 2*2 + 3*7 = 10 - 4 + 21 = 27
+        let ub = e.lin_ub(&lin);
+        assert_eq!(ub, i_rat(r(27)));
+    }
+
+    #[test]
+    fn test_set_lb_tightening() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let c0 = e.new_constraint();
+        let c1 = e.new_constraint();
+
+        // Set initial lower bound
+        assert!(e.new_ge(&v(x), &c(5), Some(c0)).is_ok());
+        assert!(e.assert(c0).is_ok());
+        assert_eq!(e.lb(x), &i_rat(r(5)));
+
+        // Set tighter lower bound with same constraint
+        assert!(e.set_lb(x, i_rat(r(7)), Some(c0)).is_ok());
+        assert!(e.assert(c0).is_ok());
+        assert_eq!(e.lb(x), &i_rat(r(7)));
+
+        // Try looser bound (should not tighten)
+        assert!(e.set_lb(x, i_rat(r(6)), Some(c1)).is_ok());
+        assert!(e.assert(c1).is_ok());
+        assert_eq!(e.lb(x), &i_rat(r(7))); // Still 7
+    }
+
+    #[test]
+    fn test_set_ub_tightening() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let c0 = e.new_constraint();
+        let c1 = e.new_constraint();
+
+        // Set initial upper bound
+        assert!(e.new_le(&v(x), &c(10), Some(c0)).is_ok());
+        assert!(e.assert(c0).is_ok());
+        assert_eq!(e.ub(x), &i_rat(r(10)));
+
+        // Set tighter upper bound with same constraint
+        assert!(e.set_ub(x, i_rat(r(8)), Some(c0)).is_ok());
+        assert!(e.assert(c0).is_ok());
+        assert_eq!(e.ub(x), &i_rat(r(8)));
+
+        // Try looser bound (should not tighten)
+        assert!(e.set_ub(x, i_rat(r(9)), Some(c1)).is_ok());
+        assert!(e.assert(c1).is_ok());
+        assert_eq!(e.ub(x), &i_rat(r(8))); // Still 8
+    }
+
+    #[test]
+    fn test_conflict_with_basic_variable() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let y = e.add_var();
+
+        // Make y basic: y = x + 5
+        assert!(e.new_eq(&v(y), &(v(x) + c(5)), None).is_ok());
+
+        let c0 = e.new_constraint();
+        let c1 = e.new_constraint();
+
+        // Constrain x: x <= 0
+        assert!(e.new_le(&v(x), &c(0), Some(c0)).is_ok());
+        assert!(e.assert(c0).is_ok());
+
+        // Constrain y to conflict: y >= 10
+        // This means x + 5 >= 10, so x >= 5, which conflicts with x <= 0
+        assert!(e.new_ge(&v(y), &c(10), Some(c1)).is_ok());
+        assert!(e.assert(c1).is_ok());
+        assert!(e.check().is_err());
+    }
+
+    #[test]
+    fn test_assert_method() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let c0 = e.new_constraint();
+
+        // Manually set bounds on constraint
+        e.constraints[c0.0].lbs.insert(x, i_rat(r(5)));
+        e.constraints[c0.0].ubs.insert(x, i_rat(r(10)));
+
+        // Assert the constraint
+        assert!(e.assert(c0).is_ok());
+        assert_eq!(e.lb(x), &i_rat(r(5)));
+        assert_eq!(e.ub(x), &i_rat(r(10)));
+    }
+
+    #[test]
+    fn test_assert_conflicting_constraint() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let c0 = e.new_constraint();
+        let c1 = e.new_constraint();
+
+        // Set initial bounds
+        e.constraints[c0.0].lbs.insert(x, i_rat(r(10)));
+        assert!(e.assert(c0).is_ok());
+
+        // Create conflicting constraint
+        e.constraints[c1.0].ubs.insert(x, i_rat(r(5)));
+        assert!(e.assert(c1).is_err()); // Should fail
+
+        // Verify the constraint was retracted
+        assert_eq!(e.lb(x), &i_rat(r(10)));
+        // Upper bound should still be infinity (constraint was retracted)
+        assert_eq!(e.ub(x), &InfRational::POSITIVE_INFINITY);
+    }
+
+    #[test]
+    fn test_pivot_upper_bound_violation() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let y = e.add_var();
+
+        // Make y basic: y = 10 - x (so when x increases, y decreases)
+        assert!(e.new_eq(&v(y), &(c(10) - v(x)), None).is_ok());
+
+        // Set bounds that will require pivoting
+        assert!(e.new_le(&v(y), &c(5), None).is_ok()); // y <= 5, so 10 - x <= 5, x >= 5
+        assert!(e.check().is_ok());
+
+        // y should be at most 5
+        assert!(e.val(y) <= &i_rat(r(5)));
+    }
+
+    #[test]
+    fn test_multiple_lin_vars() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let y = e.add_var();
+
+        // Create linear variables
+        let sum = e.add_lin_var(v(x) + v(y));
+        let diff = e.add_lin_var(v(x) - v(y));
+
+        // Set constraints on linear variables
+        assert!(e.new_le(&v(sum), &c(10), None).is_ok());
+        assert!(e.new_ge(&v(diff), &c(2), None).is_ok());
+        assert!(e.check().is_ok());
+    }
+
+    #[test]
+    fn test_new_eq_with_zero_vars() {
+        let mut e = Engine::new();
+
+        // Equation with no variables (just constants)
+        assert!(e.new_eq(&c(5), &c(5), None).is_ok()); // 5 == 5
+        assert!(e.new_eq(&c(5), &c(3), None).is_err()); // 5 == 3
+    }
+
+    #[test]
+    fn test_new_eq_with_one_var() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+
+        // Single variable equation: x = 5
+        assert!(e.new_eq(&v(x), &c(5), None).is_ok());
+        assert_eq!(e.val(x), &i_rat(r(5)));
+        assert_eq!(e.lb(x), &i_rat(r(5)));
+        assert_eq!(e.ub(x), &i_rat(r(5)));
+    }
+
+    #[test]
+    fn test_new_eq_with_multiple_vars() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        let y = e.add_var();
+
+        // Multiple variable equation: x + y = 10
+        assert!(e.new_eq(&(v(x) + v(y)), &c(10), None).is_ok());
+
+        // A slack variable should have been created
+        assert!(e.assignments.len() > 2);
+    }
+
+    #[test]
+    fn test_new_ge() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+
+        // x >= 5
+        assert!(e.new_ge(&v(x), &c(5), None).is_ok());
+        assert_eq!(e.lb(x), &i_rat(r(5)));
+    }
+
+    #[test]
+    fn test_new_gt() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+
+        // x > 5 (strict)
+        assert!(e.new_gt(&v(x), &c(5), true, None).is_ok());
+        // Lower bound should be adjusted for strict inequality
+        assert!(e.lb(x) > &i_rat(r(5)));
+    }
+
+    #[test]
+    fn test_get_conflict_when_no_conflict() {
+        let mut e = Engine::new();
+        let x = e.add_var();
+        assert!(e.new_le(&v(x), &c(10), None).is_ok());
+        assert!(e.check().is_ok());
     }
 }
