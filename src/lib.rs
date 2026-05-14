@@ -1,10 +1,8 @@
-mod constraint;
 mod inf_rational;
 mod lin;
 mod rational;
 mod var;
 
-use crate::constraint::ConstraintId;
 pub use inf_rational::{InfRational, i_i, i_rat, inf, inf_i};
 pub use lin::{Lin, c, v, vc};
 pub use rational::{Rational, r, rat};
@@ -16,14 +14,17 @@ pub use var::VarId;
 
 type Callback = Box<dyn Fn(VarId, &InfRational, &InfRational, &InfRational)>; // Callback type for variable changes: (variable index, new value, new lower bound, new upper bound)
 
-struct Constraint {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GuardId(usize);
+
+struct GuardBounds {
     lbs: HashMap<VarId, InfRational>, // variables' lower bounds set by this constraint
     ubs: HashMap<VarId, InfRational>, // variables' upper bounds set by this constraint
 }
 
-impl Constraint {
+impl GuardBounds {
     fn new() -> Self {
-        Constraint { lbs: HashMap::new(), ubs: HashMap::new() }
+        GuardBounds { lbs: HashMap::new(), ubs: HashMap::new() }
     }
 
     fn set_lb(&mut self, var: VarId, lb: InfRational) {
@@ -48,21 +49,21 @@ impl Constraint {
 }
 
 pub struct Engine {
-    assignments: Vec<InfRational>,                          // the current variable assignments
-    lbs: Vec<BTreeMap<InfRational, HashSet<ConstraintId>>>, // lower bounds for each variable, mapping from bound to the set of constraints that set it
-    ubs: Vec<BTreeMap<InfRational, HashSet<ConstraintId>>>, // upper bounds for each variable, mapping from bound to the set of constraints that set it
-    constraints: Vec<Constraint>,                           // list of constraints, each containing the bounds it sets on variables
-    tableau: BTreeMap<VarId, Lin>,                          // the tableau, mapping basic variable indices to their corresponding linear expressions
-    t_watches: Vec<HashSet<VarId>>,                         // for each variable, the set of tableau rows that watch it (i.e., contain it in their expression)
-    listeners: HashMap<VarId, Vec<Callback>>,               // listeners for variable changes, indexed by variable index
+    assignments: Vec<InfRational>,                     // the current variable assignments
+    lbs: Vec<BTreeMap<InfRational, HashSet<GuardId>>>, // lower bounds for each variable, mapping from bound to the set of constraints that set it
+    ubs: Vec<BTreeMap<InfRational, HashSet<GuardId>>>, // upper bounds for each variable, mapping from bound to the set of constraints that set it
+    guard_bounds: Vec<GuardBounds>,                    // list of constraints, each containing the bounds it sets on variables
+    tableau: BTreeMap<VarId, Lin>,                     // the tableau, mapping basic variable indices to their corresponding linear expressions
+    t_watches: Vec<HashSet<VarId>>,                    // for each variable, the set of tableau rows that watch it (i.e., contain it in their expression)
+    listeners: HashMap<VarId, Vec<Callback>>,          // listeners for variable changes, indexed by variable index
 }
 
 /// An error returned when constraint propagation detects an inconsistency.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PropagationError {
     /// The solver found a contradiction. The contained list identifies the
-    /// [`ConstraintId`]s whose bounds jointly caused the conflict.
-    Conflict(Vec<ConstraintId>),
+    /// [`GuardId`]s whose bounds jointly caused the conflict.
+    Conflict(Vec<GuardId>),
 }
 
 impl Default for Engine {
@@ -77,7 +78,7 @@ impl Engine {
             assignments: Vec::new(),
             lbs: Vec::new(),
             ubs: Vec::new(),
-            constraints: Vec::new(),
+            guard_bounds: Vec::new(),
             tableau: BTreeMap::new(),
             t_watches: Vec::new(),
             listeners: HashMap::new(),
@@ -100,16 +101,16 @@ impl Engine {
         index
     }
 
-    /// Allocates a new constraint slot and returns its [`ConstraintId`].
+    /// Allocates a new constraint slot and returns its [`GuardId`].
     ///
     /// After creation, bounds can be associated with the constraint via
     /// [`set_lb`](Self::set_lb) / [`set_ub`](Self::set_ub) using this id as
     /// the `reason`, and the constraint can then be activated with
     /// [`assert`](Self::assert).
-    pub fn new_constraint(&mut self) -> ConstraintId {
-        let index = self.constraints.len();
-        self.constraints.push(Constraint::new());
-        ConstraintId(index)
+    pub fn new_guard(&mut self) -> GuardId {
+        let index = self.guard_bounds.len();
+        self.guard_bounds.push(GuardBounds::new());
+        GuardId(index)
     }
 
     /// Returns the current assignment of `var`.
@@ -179,7 +180,7 @@ impl Engine {
     ///
     /// # Panics
     /// Panics if `lb` is negative infinity.
-    pub fn set_lb(&mut self, var: VarId, lb: InfRational, reason: Option<ConstraintId>) -> Result<(), PropagationError> {
+    pub fn set_lb(&mut self, var: VarId, lb: InfRational, reason: Option<GuardId>) -> Result<(), PropagationError> {
         assert!(lb > InfRational::NEGATIVE_INFINITY, "Lower bound cannot be negative infinity");
         if &lb > self.ub(var) {
             let mut conflict = Vec::new();
@@ -193,13 +194,13 @@ impl Engine {
         }
 
         if let Some(reason) = reason {
-            if let Some(c_lb) = self.constraints[reason.0].lbs.get(&var)
+            if let Some(c_lb) = self.guard_bounds[reason.0].lbs.get(&var)
                 && c_lb < &lb
             {
                 self.lbs[var.0].remove(c_lb);
                 self.lbs[var.0].entry(lb).or_default().insert(reason);
             }
-            self.constraints[reason.0].set_lb(var, lb);
+            self.guard_bounds[reason.0].set_lb(var, lb);
         }
 
         let entry = self.lbs[var.0].entry(lb).or_default();
@@ -222,7 +223,7 @@ impl Engine {
     ///
     /// # Panics
     /// Panics if `ub` is positive infinity.
-    pub fn set_ub(&mut self, var: VarId, ub: InfRational, reason: Option<ConstraintId>) -> Result<(), PropagationError> {
+    pub fn set_ub(&mut self, var: VarId, ub: InfRational, reason: Option<GuardId>) -> Result<(), PropagationError> {
         assert!(ub < InfRational::POSITIVE_INFINITY, "Upper bound cannot be positive infinity");
         if &ub < self.lb(var) {
             let mut conflict = Vec::new();
@@ -236,13 +237,13 @@ impl Engine {
         }
 
         if let Some(reason) = reason {
-            if let Some(c_ub) = self.constraints[reason.0].ubs.get(&var)
+            if let Some(c_ub) = self.guard_bounds[reason.0].ubs.get(&var)
                 && c_ub > &ub
             {
                 self.ubs[var.0].remove(c_ub);
                 self.ubs[var.0].entry(ub).or_default().insert(reason);
             }
-            self.constraints[reason.0].set_ub(var, ub);
+            self.guard_bounds[reason.0].set_ub(var, ub);
         }
 
         let entry = self.ubs[var.0].entry(ub).or_default();
@@ -256,7 +257,7 @@ impl Engine {
         Ok(())
     }
 
-    pub fn new_lt(&mut self, lhs: &Lin, rhs: &Lin, strict: bool, reason: Option<ConstraintId>) -> Result<(), PropagationError> {
+    pub fn new_lt(&mut self, lhs: &Lin, rhs: &Lin, strict: bool, reason: Option<GuardId>) -> Result<(), PropagationError> {
         let mut expr = lhs - rhs;
         // Remove basic variables from the expression and substitute with their tableau expressions
         for v in expr.vars.keys().cloned().collect::<Vec<VarId>>() {
@@ -277,14 +278,14 @@ impl Engine {
 
                 if coeff.is_positive() {
                     if let Some(reason) = reason {
-                        self.constraints[reason.0].set_ub(var, val);
+                        self.guard_bounds[reason.0].set_ub(var, val);
                         Ok(())
                     } else {
                         self.set_ub(var, val, reason)
                     }
                 } else {
                     if let Some(reason) = reason {
-                        self.constraints[reason.0].set_lb(var, val);
+                        self.guard_bounds[reason.0].set_lb(var, val);
                         Ok(())
                     } else {
                         self.set_lb(var, val, reason)
@@ -296,7 +297,7 @@ impl Engine {
                 let val = inf(-mem::take(&mut expr.known_term), if strict { r(-1) } else { Rational::ZERO });
                 let slack = self.add_lin_var(expr);
                 if let Some(reason) = reason {
-                    self.constraints[reason.0].set_ub(slack, val);
+                    self.guard_bounds[reason.0].set_ub(slack, val);
                     Ok(())
                 } else {
                     self.set_ub(slack, val, reason)
@@ -305,11 +306,11 @@ impl Engine {
         }
     }
 
-    pub fn new_le(&mut self, lhs: &Lin, rhs: &Lin, reason: Option<ConstraintId>) -> Result<(), PropagationError> {
+    pub fn new_le(&mut self, lhs: &Lin, rhs: &Lin, reason: Option<GuardId>) -> Result<(), PropagationError> {
         self.new_lt(lhs, rhs, false, reason)
     }
 
-    pub fn new_eq(&mut self, lhs: &Lin, rhs: &Lin, reason: Option<ConstraintId>) -> Result<(), PropagationError> {
+    pub fn new_eq(&mut self, lhs: &Lin, rhs: &Lin, reason: Option<GuardId>) -> Result<(), PropagationError> {
         let mut expr = lhs - rhs;
         // Remove basic variables from the expression and substitute with their tableau expressions
         for v in expr.vars.keys().cloned().collect::<Vec<VarId>>() {
@@ -329,8 +330,8 @@ impl Engine {
                 let val = i_rat(-expr.known_term / coeff);
                 if coeff.is_positive() {
                     if let Some(reason) = reason {
-                        self.constraints[reason.0].set_lb(var, val);
-                        self.constraints[reason.0].set_ub(var, val);
+                        self.guard_bounds[reason.0].set_lb(var, val);
+                        self.guard_bounds[reason.0].set_ub(var, val);
                         Ok(())
                     } else {
                         self.set_lb(var, val, reason)?;
@@ -338,8 +339,8 @@ impl Engine {
                     }
                 } else {
                     if let Some(reason) = reason {
-                        self.constraints[reason.0].set_lb(var, val);
-                        self.constraints[reason.0].set_ub(var, val);
+                        self.guard_bounds[reason.0].set_lb(var, val);
+                        self.guard_bounds[reason.0].set_ub(var, val);
                         Ok(())
                     } else {
                         self.set_ub(var, val, reason)?;
@@ -352,8 +353,8 @@ impl Engine {
                 let val = i_rat(-mem::take(&mut expr.known_term));
                 let slack = self.add_lin_var(expr);
                 if let Some(reason) = reason {
-                    self.constraints[reason.0].set_lb(slack, val);
-                    self.constraints[reason.0].set_ub(slack, val);
+                    self.guard_bounds[reason.0].set_lb(slack, val);
+                    self.guard_bounds[reason.0].set_ub(slack, val);
                     Ok(())
                 } else {
                     self.set_lb(slack, val, reason)?;
@@ -363,11 +364,11 @@ impl Engine {
         }
     }
 
-    pub fn new_ge(&mut self, lhs: &Lin, rhs: &Lin, reason: Option<ConstraintId>) -> Result<(), PropagationError> {
+    pub fn new_ge(&mut self, lhs: &Lin, rhs: &Lin, reason: Option<GuardId>) -> Result<(), PropagationError> {
         self.new_lt(rhs, lhs, false, reason)
     }
 
-    pub fn new_gt(&mut self, lhs: &Lin, rhs: &Lin, strict: bool, reason: Option<ConstraintId>) -> Result<(), PropagationError> {
+    pub fn new_gt(&mut self, lhs: &Lin, rhs: &Lin, strict: bool, reason: Option<GuardId>) -> Result<(), PropagationError> {
         self.new_lt(rhs, lhs, strict, reason)
     }
 
@@ -377,15 +378,15 @@ impl Engine {
     /// [`set_lb`](Self::set_lb) / [`set_ub`](Self::set_ub). On the first
     /// conflict the constraint is automatically retracted and the error is
     /// returned.
-    pub fn assert(&mut self, constraint: ConstraintId) -> Result<(), PropagationError> {
+    pub fn assert(&mut self, constraint: GuardId) -> Result<(), PropagationError> {
         // Add the constraint's bounds to the engine
-        for (var, val) in mem::take(&mut self.constraints[constraint.0].lbs) {
+        for (var, val) in mem::take(&mut self.guard_bounds[constraint.0].lbs) {
             if let Err(e) = self.set_lb(var, val, Some(constraint)) {
                 self.retract(constraint);
                 return Err(e);
             }
         }
-        for (var, val) in mem::take(&mut self.constraints[constraint.0].ubs) {
+        for (var, val) in mem::take(&mut self.guard_bounds[constraint.0].ubs) {
             if let Err(e) = self.set_ub(var, val, Some(constraint)) {
                 self.retract(constraint);
                 return Err(e);
@@ -398,12 +399,12 @@ impl Engine {
     ///
     /// After retracting, those bounds no longer participate in conflict
     /// detection or bound propagation.
-    pub fn retract(&mut self, constraint: ConstraintId) {
+    pub fn retract(&mut self, constraint: GuardId) {
         // Remove the constraint's bounds from the engine
-        for (&var, &val) in &self.constraints[constraint.0].lbs {
+        for (&var, &val) in &self.guard_bounds[constraint.0].lbs {
             self.lbs[var.0].remove(&val);
         }
-        for (&var, &val) in &self.constraints[constraint.0].ubs {
+        for (&var, &val) in &self.guard_bounds[constraint.0].ubs {
             self.ubs[var.0].remove(&val);
         }
     }
@@ -683,8 +684,8 @@ mod tests {
     fn bound_conflict() {
         let mut e = Engine::new();
         let x = e.add_var();
-        let c0 = e.new_constraint();
-        let c1 = e.new_constraint();
+        let c0 = e.new_guard();
+        let c1 = e.new_guard();
         assert!(e.new_le(&v(x), &c(10), Some(c0)).is_ok());
         assert!(e.new_gt(&v(x), &c(15), true, Some(c1)).is_ok());
         assert!(e.assert(c0).is_ok());
@@ -790,8 +791,8 @@ mod tests {
     fn redundant_constraint() {
         let mut e = Engine::new();
         let x = e.add_var();
-        let c0 = e.new_constraint();
-        let c1 = e.new_constraint();
+        let c0 = e.new_guard();
+        let c1 = e.new_guard();
         assert!(e.new_le(&v(x), &c(10), Some(c0)).is_ok());
         assert!(e.new_le(&v(x), &c(20), Some(c1)).is_ok()); // looser → redundant
         assert!(e.check().is_ok());
@@ -801,7 +802,7 @@ mod tests {
     fn shared_reason_retraction() {
         let mut e = Engine::new();
         let x = e.add_var();
-        let c0 = e.new_constraint();
+        let c0 = e.new_guard();
         assert!(e.new_le(&v(x), &c(20), Some(c0)).is_ok());
         assert!(e.new_le(&v(x), &c(10), Some(c0)).is_ok());
         assert!(e.check().is_ok());
@@ -817,8 +818,8 @@ mod tests {
         let y = e.add_var();
         let z = e.add_var();
 
-        let c0 = e.new_constraint();
-        let c1 = e.new_constraint();
+        let c0 = e.new_guard();
+        let c1 = e.new_guard();
 
         // y >= x + 1
         assert!(e.new_ge(&v(y), &(v(x) + c(1)), Some(c0)).is_ok());
@@ -841,9 +842,9 @@ mod tests {
         let x = e.add_var();
         let y = e.add_var();
 
-        let c0 = e.new_constraint();
-        let c1 = e.new_constraint();
-        let c2 = e.new_constraint();
+        let c0 = e.new_guard();
+        let c1 = e.new_guard();
+        let c2 = e.new_guard();
 
         // x + y >= 1
         assert!(e.new_ge(&(v(x) + v(y)), &c(1), Some(c0)).is_ok());
@@ -869,19 +870,19 @@ mod tests {
         let s1 = e.add_lin_var(vc(x, -1) + vc(y, 1)); // s1 = y - x
         let s2 = e.add_lin_var(vc(x, 1) + vc(y, 1)); // s2 = x + y
 
-        let c0 = e.new_constraint();
+        let c0 = e.new_guard();
         assert!(e.new_le(&v(x), &c(-4), Some(c0)).is_ok()); // x <= -4
         assert!(e.assert(c0).is_ok());
         assert!(e.check().is_ok());
-        let c1 = e.new_constraint();
+        let c1 = e.new_guard();
         assert!(e.new_ge(&v(x), &c(-8), Some(c1)).is_ok()); // x >= -8
         assert!(e.assert(c1).is_ok());
         assert!(e.check().is_ok());
-        let c2 = e.new_constraint();
+        let c2 = e.new_guard();
         assert!(e.new_le(&v(s1), &c(1), Some(c2)).is_ok()); // s1 <= 1
         assert!(e.assert(c2).is_ok());
         assert!(e.check().is_ok());
-        let c3 = e.new_constraint();
+        let c3 = e.new_guard();
         assert!(e.new_ge(&v(s2), &c(-3), Some(c3)).is_ok()); // s2 >= -3
         assert!(e.assert(c3).is_ok());
         let Err(PropagationError::Conflict(conflict)) = e.check() else { panic!("expected conflict") };
@@ -894,7 +895,7 @@ mod tests {
     fn add_retract_readd() {
         let mut e = Engine::new();
         let x = e.add_var();
-        let c0 = e.new_constraint();
+        let c0 = e.new_guard();
         // Add constraint: x >= 5
         assert!(e.new_ge(&v(x), &c(5), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
@@ -921,8 +922,8 @@ mod tests {
     fn tightening_bound() {
         let mut e = Engine::new();
         let x = e.add_var();
-        let c0 = e.new_constraint();
-        let c1 = e.new_constraint();
+        let c0 = e.new_guard();
+        let c1 = e.new_guard();
         assert!(e.new_le(&v(x), &c(20), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
         assert!(e.new_le(&v(x), &c(10), Some(c1)).is_ok()); // tighter
@@ -934,7 +935,7 @@ mod tests {
     fn test_default_trait() {
         let e = Engine::default();
         assert_eq!(e.assignments.len(), 0);
-        assert_eq!(e.constraints.len(), 0);
+        assert_eq!(e.guard_bounds.len(), 0);
     }
 
     #[test]
@@ -965,8 +966,8 @@ mod tests {
     fn test_set_lb_tightening() {
         let mut e = Engine::new();
         let x = e.add_var();
-        let c0 = e.new_constraint();
-        let c1 = e.new_constraint();
+        let c0 = e.new_guard();
+        let c1 = e.new_guard();
 
         // Set initial lower bound
         assert!(e.new_ge(&v(x), &c(5), Some(c0)).is_ok());
@@ -988,8 +989,8 @@ mod tests {
     fn test_set_ub_tightening() {
         let mut e = Engine::new();
         let x = e.add_var();
-        let c0 = e.new_constraint();
-        let c1 = e.new_constraint();
+        let c0 = e.new_guard();
+        let c1 = e.new_guard();
 
         // Set initial upper bound
         assert!(e.new_le(&v(x), &c(10), Some(c0)).is_ok());
@@ -1016,8 +1017,8 @@ mod tests {
         // Make y basic: y = x + 5
         assert!(e.new_eq(&v(y), &(v(x) + c(5)), None).is_ok());
 
-        let c0 = e.new_constraint();
-        let c1 = e.new_constraint();
+        let c0 = e.new_guard();
+        let c1 = e.new_guard();
 
         // Constrain x: x <= 0
         assert!(e.new_le(&v(x), &c(0), Some(c0)).is_ok());
@@ -1034,11 +1035,11 @@ mod tests {
     fn test_assert_method() {
         let mut e = Engine::new();
         let x = e.add_var();
-        let c0 = e.new_constraint();
+        let c0 = e.new_guard();
 
         // Manually set bounds on constraint
-        e.constraints[c0.0].lbs.insert(x, i_rat(r(5)));
-        e.constraints[c0.0].ubs.insert(x, i_rat(r(10)));
+        e.guard_bounds[c0.0].lbs.insert(x, i_rat(r(5)));
+        e.guard_bounds[c0.0].ubs.insert(x, i_rat(r(10)));
 
         // Assert the constraint
         assert!(e.assert(c0).is_ok());
@@ -1050,15 +1051,15 @@ mod tests {
     fn test_assert_conflicting_constraint() {
         let mut e = Engine::new();
         let x = e.add_var();
-        let c0 = e.new_constraint();
-        let c1 = e.new_constraint();
+        let c0 = e.new_guard();
+        let c1 = e.new_guard();
 
         // Set initial bounds
-        e.constraints[c0.0].lbs.insert(x, i_rat(r(10)));
+        e.guard_bounds[c0.0].lbs.insert(x, i_rat(r(10)));
         assert!(e.assert(c0).is_ok());
 
         // Create conflicting constraint
-        e.constraints[c1.0].ubs.insert(x, i_rat(r(5)));
+        e.guard_bounds[c1.0].ubs.insert(x, i_rat(r(5)));
         assert!(e.assert(c1).is_err()); // Should fail
 
         // Verify the constraint was retracted
