@@ -301,6 +301,72 @@ impl Engine {
         }
     }
 
+    pub fn new_le(&mut self, lhs: &Lin, rhs: &Lin, reason: Option<ConstraintId>) -> Result<(), PropagationError> {
+        self.new_lt(lhs, rhs, false, reason)
+    }
+
+    pub fn new_eq(&mut self, lhs: &Lin, rhs: &Lin, reason: Option<ConstraintId>) -> Result<(), PropagationError> {
+        let mut expr = lhs - rhs;
+        // Remove basic variables from the expression and substitute with their tableau expressions
+        for v in expr.vars.keys().cloned().collect::<Vec<VarId>>() {
+            if let Some(row) = self.tableau.get(&v) {
+                expr.substitute(v, row);
+            }
+        }
+
+        match expr.vars.len() {
+            0 => {
+                // If the expression is constant, check if it satisfies the constraint
+                if expr.known_term.is_zero() { Ok(()) } else { Err(PropagationError::Conflict(vec![])) }
+            }
+            1 => {
+                // If the expression has one variable, we can directly set a bound on it
+                let (&var, &coeff) = expr.vars.iter().next().unwrap();
+                let val = i_rat(-expr.known_term / coeff);
+                if coeff.is_positive() {
+                    if let Some(reason) = reason {
+                        self.constraints[reason.0].set_lb(var, val);
+                        self.constraints[reason.0].set_ub(var, val);
+                        Ok(())
+                    } else {
+                        self.set_lb(var, val, reason)?;
+                        self.set_ub(var, val, reason)
+                    }
+                } else {
+                    if let Some(reason) = reason {
+                        self.constraints[reason.0].set_lb(var, val);
+                        self.constraints[reason.0].set_ub(var, val);
+                        Ok(())
+                    } else {
+                        self.set_ub(var, val, reason)?;
+                        self.set_lb(var, val, reason)
+                    }
+                }
+            }
+            _ => {
+                // If the expression has multiple variables, we introduce a new slack variable and set bounds on it
+                let val = i_rat(-mem::take(&mut expr.known_term));
+                let slack = self.add_lin_var(expr);
+                if let Some(reason) = reason {
+                    self.constraints[reason.0].set_lb(slack, val);
+                    self.constraints[reason.0].set_ub(slack, val);
+                    Ok(())
+                } else {
+                    self.set_lb(slack, val, reason)?;
+                    self.set_ub(slack, val, reason)
+                }
+            }
+        }
+    }
+
+    pub fn new_ge(&mut self, lhs: &Lin, rhs: &Lin, reason: Option<ConstraintId>) -> Result<(), PropagationError> {
+        self.new_lt(rhs, lhs, false, reason)
+    }
+
+    pub fn new_gt(&mut self, lhs: &Lin, rhs: &Lin, strict: bool, reason: Option<ConstraintId>) -> Result<(), PropagationError> {
+        self.new_lt(rhs, lhs, strict, reason)
+    }
+
     /// Activates all bounds registered under `constraint`.
     ///
     /// Each lower/upper bound stored in the constraint is applied via
