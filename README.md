@@ -61,10 +61,10 @@ let g2 = engine.add_guard();
 
 // Add and assert constraints in order: g1 first, then g2
 engine.new_ge(&v(x), &c(5), Some(g1)).expect("constraint should be consistent"); // x >= 5 (under g1)
-engine.assert(g1).expect("guard assertion should succeed");                       // Assert g1 [1st]
+engine.assert(g1).expect("guard assertion should succeed");                      // Assert g1 [1st]
 
 engine.new_le(&v(y), &c(10), Some(g2)).expect("constraint should be consistent"); // y <= 10 (under g2)
-engine.assert(g2).expect("guard assertion should succeed");                        // Assert g2 [2nd]
+engine.assert(g2).expect("guard assertion should succeed");                       // Assert g2 [2nd]
 
 // Key point: retract the FIRST constraint (g1), leaving g2 active
 // In a chronological (stack-like) system this would be impossible!
