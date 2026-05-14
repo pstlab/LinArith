@@ -10,7 +10,7 @@ pub use lin::{Lin, c, v, vc};
 pub use rational::{Rational, r, rat};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    fmt,
+    fmt, mem,
 };
 pub use var::VarId;
 
@@ -19,6 +19,32 @@ type Callback = Box<dyn Fn(VarId, &InfRational, &InfRational, &InfRational)>; //
 struct Constraint {
     lbs: HashMap<VarId, InfRational>, // variables' lower bounds set by this constraint
     ubs: HashMap<VarId, InfRational>, // variables' upper bounds set by this constraint
+}
+
+impl Constraint {
+    fn new() -> Self {
+        Constraint { lbs: HashMap::new(), ubs: HashMap::new() }
+    }
+
+    fn set_lb(&mut self, var: VarId, lb: InfRational) {
+        if let Some(c_lb) = self.lbs.get(&var) {
+            if c_lb < &lb {
+                self.lbs.insert(var, lb);
+            }
+        } else {
+            self.lbs.insert(var, lb);
+        }
+    }
+
+    fn set_ub(&mut self, var: VarId, ub: InfRational) {
+        if let Some(c_ub) = self.ubs.get(&var) {
+            if c_ub > &ub {
+                self.ubs.insert(var, ub);
+            }
+        } else {
+            self.ubs.insert(var, ub);
+        }
+    }
 }
 
 pub struct Engine {
@@ -67,6 +93,13 @@ impl Engine {
         VarId(index)
     }
 
+    pub fn add_lin_var(&mut self, lin: Lin) -> VarId {
+        let index = self.add_var();
+        self.assignments[index.0] = self.lin_val(&lin);
+        self.new_row(index, lin);
+        index
+    }
+
     /// Allocates a new constraint slot and returns its [`ConstraintId`].
     ///
     /// After creation, bounds can be associated with the constraint via
@@ -75,7 +108,7 @@ impl Engine {
     /// [`assert`](Self::assert).
     pub fn new_constraint(&mut self) -> ConstraintId {
         let index = self.constraints.len();
-        self.constraints.push(Constraint { lbs: HashMap::new(), ubs: HashMap::new() });
+        self.constraints.push(Constraint::new());
         ConstraintId(index)
     }
 
@@ -144,8 +177,8 @@ impl Engine {
     /// Panics if `lb` is negative infinity.
     pub fn set_lb(&mut self, var: VarId, lb: InfRational, reason: Option<ConstraintId>) -> Result<(), PropagationError> {
         assert!(lb > InfRational::NEGATIVE_INFINITY, "Lower bound cannot be negative infinity");
-        let mut conflict = Vec::new();
         if &lb > self.ub(var) {
+            let mut conflict = Vec::new();
             if let Some(reason) = reason {
                 conflict.push(reason);
             }
@@ -160,11 +193,9 @@ impl Engine {
                 if c_lb < &lb {
                     self.lbs[var.0].remove(c_lb);
                     self.lbs[var.0].entry(lb).or_default().insert(reason);
-                    self.constraints[reason.0].lbs.insert(var, lb);
                 }
-            } else {
-                self.constraints[reason.0].lbs.insert(var, lb);
             }
+            self.constraints[reason.0].set_lb(var, lb);
         }
 
         let entry = self.lbs[var.0].entry(lb).or_default();
@@ -189,8 +220,8 @@ impl Engine {
     /// Panics if `ub` is positive infinity.
     pub fn set_ub(&mut self, var: VarId, ub: InfRational, reason: Option<ConstraintId>) -> Result<(), PropagationError> {
         assert!(ub < InfRational::POSITIVE_INFINITY, "Upper bound cannot be positive infinity");
-        let mut conflict = Vec::new();
         if &ub < self.lb(var) {
+            let mut conflict = Vec::new();
             if let Some(reason) = reason {
                 conflict.push(reason);
             }
@@ -205,11 +236,9 @@ impl Engine {
                 if c_ub > &ub {
                     self.ubs[var.0].remove(c_ub);
                     self.ubs[var.0].entry(ub).or_default().insert(reason);
-                    self.constraints[reason.0].ubs.insert(var, ub);
                 }
-            } else {
-                self.constraints[reason.0].ubs.insert(var, ub);
             }
+            self.constraints[reason.0].set_ub(var, ub);
         }
 
         let entry = self.ubs[var.0].entry(ub).or_default();
@@ -223,6 +252,55 @@ impl Engine {
         Ok(())
     }
 
+    pub fn new_lt(&mut self, lhs: &Lin, rhs: &Lin, strict: bool, reason: Option<ConstraintId>) -> Result<(), PropagationError> {
+        let mut expr = lhs - rhs;
+        // Remove basic variables from the expression and substitute with their tableau expressions
+        for v in expr.vars.keys().cloned().collect::<Vec<VarId>>() {
+            if let Some(row) = self.tableau.get(&v) {
+                expr.substitute(v, row);
+            }
+        }
+
+        match expr.vars.len() {
+            0 => {
+                // If the expression is constant, check if it satisfies the constraint
+                if if strict { expr.known_term.is_negative() } else { !expr.known_term.is_positive() } { Ok(()) } else { Err(PropagationError::Conflict(vec![])) }
+            }
+            1 => {
+                // If the expression has one variable, we can directly set a bound on it
+                let (&var, &coeff) = expr.vars.iter().next().unwrap();
+                let val = inf(-expr.known_term / coeff, if strict { if coeff.is_positive() { r(-1) } else { r(1) } } else { Rational::ZERO });
+
+                if coeff.is_positive() {
+                    if let Some(reason) = reason {
+                        self.constraints[reason.0].set_ub(var, val);
+                        Ok(())
+                    } else {
+                        self.set_ub(var, val, reason)
+                    }
+                } else {
+                    if let Some(reason) = reason {
+                        self.constraints[reason.0].set_lb(var, val);
+                        Ok(())
+                    } else {
+                        self.set_lb(var, val, reason)
+                    }
+                }
+            }
+            _ => {
+                // If the expression has multiple variables, we introduce a new slack variable and set a bound on it
+                let val = inf(-mem::take(&mut expr.known_term), if strict { r(-1) } else { Rational::ZERO });
+                let slack = self.add_lin_var(expr);
+                if let Some(reason) = reason {
+                    self.constraints[reason.0].set_ub(slack, val);
+                    Ok(())
+                } else {
+                    self.set_ub(slack, val, reason)
+                }
+            }
+        }
+    }
+
     /// Activates all bounds registered under `constraint`.
     ///
     /// Each lower/upper bound stored in the constraint is applied via
@@ -231,13 +309,13 @@ impl Engine {
     /// returned.
     pub fn assert(&mut self, constraint: ConstraintId) -> Result<(), PropagationError> {
         // Add the constraint's bounds to the engine
-        for (var, val) in std::mem::take(&mut self.constraints[constraint.0].lbs) {
+        for (var, val) in mem::take(&mut self.constraints[constraint.0].lbs) {
             if let Err(e) = self.set_lb(var, val, Some(constraint)) {
                 self.retract(constraint);
                 return Err(e);
             }
         }
-        for (var, val) in std::mem::take(&mut self.constraints[constraint.0].ubs) {
+        for (var, val) in mem::take(&mut self.constraints[constraint.0].ubs) {
             if let Err(e) = self.set_ub(var, val, Some(constraint)) {
                 self.retract(constraint);
                 return Err(e);
@@ -390,7 +468,7 @@ impl Engine {
         new_row.vars.insert(leaving, coeff.reciprocal());
 
         // Substitute the new row into all other rows that contain the entering variable
-        let watches = std::mem::take(&mut self.t_watches[entering.0]);
+        let watches = mem::take(&mut self.t_watches[entering.0]);
         for watch in &watches {
             if watch != &leaving
                 && let Some(row) = self.tableau.get_mut(watch)
