@@ -19,10 +19,12 @@ use linarith::{c, v, Engine};
 let mut engine = Engine::new();
 let x = engine.add_var();
 
-assert!(engine.new_ge(&v(x), &c(5), None).is_ok());
-assert!(engine.new_le(&v(x), &c(10), None).is_ok());
-assert!(engine.check().is_ok());
+// Add constraints: 5 <= x <= 10
+engine.new_ge(&v(x), &c(5), None).expect("constraint should be consistent");  // x >= 5
+engine.new_le(&v(x), &c(10), None).expect("constraint should be consistent"); // x <= 10
+engine.check().expect("feasibility check should succeed");
 
+// Verify the solver computed bounds correctly
 assert!(engine.val(x) >= &linarith::i_rat(linarith::r(5)));
 assert!(engine.val(x) <= &linarith::i_rat(linarith::r(10)));
 ```
@@ -57,12 +59,12 @@ let y = engine.add_var();
 let g1 = engine.add_guard();
 let g2 = engine.add_guard();
 
-// Assert constraints in order: g1 first, then g2
-engine.new_ge(&v(x), &c(5), Some(g1)).ok();  // x >= 5
-engine.assert(g1).ok();                      // [1st]
+// Add and assert constraints in order: g1 first, then g2
+engine.new_ge(&v(x), &c(5), Some(g1)).expect("constraint should be consistent"); // x >= 5 (under g1)
+engine.assert(g1).expect("guard assertion should succeed");                       // Assert g1 [1st]
 
-engine.new_le(&v(y), &c(10), Some(g2)).ok(); // y <= 10
-engine.assert(g2).ok();                      // [2nd]
+engine.new_le(&v(y), &c(10), Some(g2)).expect("constraint should be consistent"); // y <= 10 (under g2)
+engine.assert(g2).expect("guard assertion should succeed");                        // Assert g2 [2nd]
 
 // Key point: retract the FIRST constraint (g1), leaving g2 active
 // In a chronological (stack-like) system this would be impossible!

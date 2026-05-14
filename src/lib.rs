@@ -1265,4 +1265,30 @@ mod tests {
         assert!(e.new_le(&v(x), &c(10), None).is_ok());
         assert!(e.check().is_ok());
     }
+
+    #[test]
+    fn main() {
+        let mut engine = Engine::new();
+        let x = engine.add_var();
+        let y = engine.add_var();
+
+        let g1 = engine.add_guard();
+        let g2 = engine.add_guard();
+
+        // Assert constraints in order: g1 first, then g2
+        engine.new_ge(&v(x), &c(5), Some(g1)).ok(); // x >= 5
+        engine.assert(g1).ok(); // [1st]
+
+        engine.new_le(&v(y), &c(10), Some(g2)).ok(); // y <= 10
+        engine.assert(g2).ok(); // [2nd]
+
+        // Key point: retract the FIRST constraint (g1), leaving g2 active
+        // In a chronological (stack-like) system this would be impossible!
+        // You'd have to retract g2 first, then g1. Not here.
+        engine.retract(g1); // Retract the FIRST asserted constraint, even though g2 came after!
+
+        // g1's constraint is gone, but g2's remains
+        assert_eq!(engine.lb(x), &InfRational::NEGATIVE_INFINITY); // x is unbounded
+        assert_eq!(engine.ub(y), &i_rat(r(10))); // y <= 10 still active!
+    }
 }
