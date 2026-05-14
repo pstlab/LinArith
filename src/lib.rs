@@ -223,7 +223,7 @@ impl Engine {
                 // Only update if the new bound is tighter (larger)
                 if *c_lb < lb {
                     // Remove the guard from the old bound entry, and delete the entry if it becomes empty
-                    if self.lbs[var.0].get_mut(c_lb).map_or(false, |guards| {
+                    if self.lbs[var.0].get_mut(c_lb).is_some_and(|guards| {
                         guards.remove(&guard);
                         guards.is_empty()
                     }) {
@@ -280,7 +280,7 @@ impl Engine {
                 // Only update if the new bound is tighter (smaller)
                 if *c_ub > ub {
                     // Remove the guard from the old bound entry, and delete the entry if it becomes empty
-                    if self.ubs[var.0].get_mut(c_ub).map_or(false, |guards| {
+                    if self.ubs[var.0].get_mut(c_ub).is_some_and(|guards| {
                         guards.remove(&guard);
                         guards.is_empty()
                     }) {
