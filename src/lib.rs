@@ -189,11 +189,11 @@ impl Engine {
         }
 
         if let Some(reason) = reason {
-            if let Some(c_lb) = self.constraints[reason.0].lbs.get(&var) {
-                if c_lb < &lb {
-                    self.lbs[var.0].remove(c_lb);
-                    self.lbs[var.0].entry(lb).or_default().insert(reason);
-                }
+            if let Some(c_lb) = self.constraints[reason.0].lbs.get(&var)
+                && c_lb < &lb
+            {
+                self.lbs[var.0].remove(c_lb);
+                self.lbs[var.0].entry(lb).or_default().insert(reason);
             }
             self.constraints[reason.0].set_lb(var, lb);
         }
@@ -232,11 +232,11 @@ impl Engine {
         }
 
         if let Some(reason) = reason {
-            if let Some(c_ub) = self.constraints[reason.0].ubs.get(&var) {
-                if c_ub > &ub {
-                    self.ubs[var.0].remove(c_ub);
-                    self.ubs[var.0].entry(ub).or_default().insert(reason);
-                }
+            if let Some(c_ub) = self.constraints[reason.0].ubs.get(&var)
+                && c_ub > &ub
+            {
+                self.ubs[var.0].remove(c_ub);
+                self.ubs[var.0].entry(ub).or_default().insert(reason);
             }
             self.constraints[reason.0].set_ub(var, ub);
         }
