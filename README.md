@@ -40,4 +40,42 @@ assert!(engine.val(x) <= &linarith::i_rat(linarith::r(10)));
 2. Add variables with `add_var` or `add_lin_var`.
 3. Add constraints with `new_le`, `new_lt`, `new_eq`, `new_ge`, or `new_gt`.
 4. Call `check` to restore feasibility when needed.
-5. Use `new_guard`, `assert`, and `retract` when you want constraints to be optional.
+5. Use `add_guard`, `assert`, and `retract` when you want constraints to be optional.
+
+## Non-chronological Constraint Retraction
+
+One of the core features of LinArith is **non-chronological retraction**: you can remove
+constraints in any order, not just in reverse order of addition.
+
+This is achieved through the guard system:
+
+```rust
+let mut engine = Engine::new();
+let x = engine.add_var();
+let y = engine.add_var();
+
+let g1 = engine.add_guard();
+let g2 = engine.add_guard();
+
+// Assert constraints in order: g1 first, then g2
+engine.new_ge(&v(x), &c(5), Some(g1)).ok();  // x >= 5
+engine.assert(g1).ok();                      // [1st]
+
+engine.new_le(&v(y), &c(10), Some(g2)).ok(); // y <= 10
+engine.assert(g2).ok();                      // [2nd]
+
+// Key point: retract the FIRST constraint (g1), leaving g2 active
+// In a chronological (stack-like) system this would be impossible!
+// You'd have to retract g2 first, then g1. Not here.
+engine.retract(g1);  // Retract the FIRST asserted constraint, even though g2 came after!
+
+// g1's constraint is gone, but g2's remains
+assert_eq!(engine.lb(x), &InfRational::NEGATIVE_INFINITY); // x is unbounded
+assert_eq!(engine.ub(y), &i_rat(r(10)));                   // y <= 10 still active!
+```
+
+The solver maintains an efficient dual-index system:
+- Each variable tracks which guards set each of its bounds
+- Each guard tracks which variables it constrains
+
+This enables O(1) cleanup when retracting, making backtracking and hypothetical reasoning efficient.

@@ -216,21 +216,30 @@ impl Engine {
         }
 
         if let Some(guard) = guard {
+            // When tightening (increasing) a bound via the same guard, the old bound entry
+            // is cleaned up (removed if empty) and the new one is recorded.
+            // Check if this guard already has a lower bound for this variable
             if let Some(c_lb) = self.guard_bounds[guard.0].lbs.get(&var) {
+                // Only update if the new bound is tighter (larger)
                 if *c_lb < lb {
+                    // Remove the guard from the old bound entry, and delete the entry if it becomes empty
                     if self.lbs[var.0].get_mut(c_lb).map_or(false, |guards| {
                         guards.remove(&guard);
                         guards.is_empty()
                     }) {
                         self.lbs[var.0].remove(c_lb);
                     }
+                    // Add the guard to the new (tighter) bound entry
                     self.lbs[var.0].entry(lb).or_default().insert(guard);
                 }
             } else {
+                // First time setting a lower bound for this (guard, var) pair
                 self.lbs[var.0].entry(lb).or_default().insert(guard);
             }
+            // Update the guard's internal record
             self.guard_bounds[guard.0].set_lb(var, lb);
         } else {
+            // Guard-less constraint: just ensure the entry exists for consistency
             self.lbs[var.0].entry(lb).or_default();
         }
 
@@ -264,21 +273,30 @@ impl Engine {
         }
 
         if let Some(guard) = guard {
+            // When tightening (decreasing) a bound via the same guard, the old bound entry
+            // is cleaned up (removed if empty) and the new one is recorded.
+            // Check if this guard already has an upper bound for this variable
             if let Some(c_ub) = self.guard_bounds[guard.0].ubs.get(&var) {
+                // Only update if the new bound is tighter (smaller)
                 if *c_ub > ub {
+                    // Remove the guard from the old bound entry, and delete the entry if it becomes empty
                     if self.ubs[var.0].get_mut(c_ub).map_or(false, |guards| {
                         guards.remove(&guard);
                         guards.is_empty()
                     }) {
                         self.ubs[var.0].remove(c_ub);
                     }
+                    // Add the guard to the new (tighter) bound entry
                     self.ubs[var.0].entry(ub).or_default().insert(guard);
                 }
             } else {
+                // First time setting an upper bound for this (guard, var) pair
                 self.ubs[var.0].entry(ub).or_default().insert(guard);
             }
+            // Update the guard's internal record
             self.guard_bounds[guard.0].set_ub(var, ub);
         } else {
+            // Guard-less constraint: just ensure the entry exists for consistency
             self.ubs[var.0].entry(ub).or_default();
         }
 
