@@ -218,13 +218,13 @@ impl Engine {
         if let Some(guard) = guard {
             if let Some(c_lb) = self.guard_bounds[guard.0].lbs.get(&var) {
                 if *c_lb < lb {
-                    if if let Some(guards) = self.lbs[var.0].get_mut(&c_lb) {
+                    if if let Some(guards) = self.lbs[var.0].get_mut(c_lb) {
                         guards.remove(&guard);
                         guards.is_empty()
                     } else {
                         false
                     } {
-                        self.lbs[var.0].remove(&c_lb);
+                        self.lbs[var.0].remove(c_lb);
                     }
                     self.lbs[var.0].entry(lb).or_default().insert(guard);
                 }
@@ -268,13 +268,13 @@ impl Engine {
         if let Some(guard) = guard {
             if let Some(c_ub) = self.guard_bounds[guard.0].ubs.get(&var) {
                 if *c_ub > ub {
-                    if if let Some(guards) = self.ubs[var.0].get_mut(&c_ub) {
+                    if if let Some(guards) = self.ubs[var.0].get_mut(c_ub) {
                         guards.remove(&guard);
                         guards.is_empty()
                     } else {
                         false
                     } {
-                        self.ubs[var.0].remove(&c_ub);
+                        self.ubs[var.0].remove(c_ub);
                     }
                     self.ubs[var.0].entry(ub).or_default().insert(guard);
                 }
