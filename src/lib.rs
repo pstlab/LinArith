@@ -101,12 +101,6 @@ impl Engine {
         index
     }
 
-    /// Allocates a new constraint slot and returns its [`GuardId`].
-    ///
-    /// After creation, bounds can be associated with the constraint via
-    /// [`set_lb`](Self::set_lb) / [`set_ub`](Self::set_ub) using this id as
-    /// the `reason`, and the constraint can then be activated with
-    /// [`assert`](Self::assert).
     pub fn new_guard(&mut self) -> GuardId {
         let index = self.guard_bounds.len();
         self.guard_bounds.push(GuardBounds::new());
@@ -171,7 +165,7 @@ impl Engine {
         self.lb(lhs) < self.ub(rhs) && self.lb(rhs) < self.ub(lhs)
     }
 
-    /// Asserts that `var >= lb`, attributed to the optional `reason` constraint.
+    /// Asserts that `var >= lb`, attributed to the optional `guard` constraint.
     ///
     /// If the new lower bound exceeds the current upper bound, a
     /// [`PropagationError::Conflict`] is returned immediately without modifying
@@ -180,32 +174,32 @@ impl Engine {
     ///
     /// # Panics
     /// Panics if `lb` is negative infinity.
-    pub fn set_lb(&mut self, var: VarId, lb: InfRational, reason: Option<GuardId>) -> Result<(), PropagationError> {
+    pub fn set_lb(&mut self, var: VarId, lb: InfRational, guard: Option<GuardId>) -> Result<(), PropagationError> {
         assert!(lb > InfRational::NEGATIVE_INFINITY, "Lower bound cannot be negative infinity");
         if &lb > self.ub(var) {
             let mut conflict = Vec::new();
-            if let Some(reason) = reason {
-                conflict.push(reason);
+            if let Some(guard) = guard {
+                conflict.push(guard);
             }
-            for reason in self.ubs[var.0].iter().next().unwrap().1.iter() {
-                conflict.push(*reason);
+            for guard in self.ubs[var.0].iter().next().unwrap().1.iter() {
+                conflict.push(*guard);
             }
             return Err(PropagationError::Conflict(conflict)); // Inconsistent constraint
         }
 
-        if let Some(reason) = reason {
-            if let Some(c_lb) = self.guard_bounds[reason.0].lbs.get(&var)
+        if let Some(guard) = guard {
+            if let Some(c_lb) = self.guard_bounds[guard.0].lbs.get(&var)
                 && c_lb < &lb
             {
                 self.lbs[var.0].remove(c_lb);
-                self.lbs[var.0].entry(lb).or_default().insert(reason);
+                self.lbs[var.0].entry(lb).or_default().insert(guard);
             }
-            self.guard_bounds[reason.0].set_lb(var, lb);
+            self.guard_bounds[guard.0].set_lb(var, lb);
         }
 
         let entry = self.lbs[var.0].entry(lb).or_default();
-        if let Some(reason) = reason {
-            entry.insert(reason);
+        if let Some(guard) = guard {
+            entry.insert(guard);
         }
         if self.val(var) < &lb && !self.is_basic(var) {
             self.update(var, lb);
@@ -214,7 +208,7 @@ impl Engine {
         Ok(())
     }
 
-    /// Asserts that `var <= ub`, attributed to the optional `reason` constraint.
+    /// Asserts that `var <= ub`, attributed to the optional `guard` constraint.
     ///
     /// If the new upper bound falls below the current lower bound, a
     /// [`PropagationError::Conflict`] is returned immediately without modifying
@@ -223,32 +217,32 @@ impl Engine {
     ///
     /// # Panics
     /// Panics if `ub` is positive infinity.
-    pub fn set_ub(&mut self, var: VarId, ub: InfRational, reason: Option<GuardId>) -> Result<(), PropagationError> {
+    pub fn set_ub(&mut self, var: VarId, ub: InfRational, guard: Option<GuardId>) -> Result<(), PropagationError> {
         assert!(ub < InfRational::POSITIVE_INFINITY, "Upper bound cannot be positive infinity");
         if &ub < self.lb(var) {
             let mut conflict = Vec::new();
-            if let Some(reason) = reason {
-                conflict.push(reason);
+            if let Some(guard) = guard {
+                conflict.push(guard);
             }
-            for reason in self.lbs[var.0].iter().next_back().unwrap().1.iter() {
-                conflict.push(*reason);
+            for guard in self.lbs[var.0].iter().next_back().unwrap().1.iter() {
+                conflict.push(*guard);
             }
             return Err(PropagationError::Conflict(conflict)); // Inconsistent constraint
         }
 
-        if let Some(reason) = reason {
-            if let Some(c_ub) = self.guard_bounds[reason.0].ubs.get(&var)
+        if let Some(guard) = guard {
+            if let Some(c_ub) = self.guard_bounds[guard.0].ubs.get(&var)
                 && c_ub > &ub
             {
                 self.ubs[var.0].remove(c_ub);
-                self.ubs[var.0].entry(ub).or_default().insert(reason);
+                self.ubs[var.0].entry(ub).or_default().insert(guard);
             }
-            self.guard_bounds[reason.0].set_ub(var, ub);
+            self.guard_bounds[guard.0].set_ub(var, ub);
         }
 
         let entry = self.ubs[var.0].entry(ub).or_default();
-        if let Some(reason) = reason {
-            entry.insert(reason);
+        if let Some(guard) = guard {
+            entry.insert(guard);
         }
         if self.val(var) > &ub && !self.is_basic(var) {
             self.update(var, ub);
@@ -257,7 +251,7 @@ impl Engine {
         Ok(())
     }
 
-    pub fn new_lt(&mut self, lhs: &Lin, rhs: &Lin, strict: bool, reason: Option<GuardId>) -> Result<(), PropagationError> {
+    pub fn new_lt(&mut self, lhs: &Lin, rhs: &Lin, strict: bool, guard: Option<GuardId>) -> Result<(), PropagationError> {
         let mut expr = lhs - rhs;
         // Remove basic variables from the expression and substitute with their tableau expressions
         for v in expr.vars.keys().cloned().collect::<Vec<VarId>>() {
@@ -277,18 +271,18 @@ impl Engine {
                 let val = inf(-expr.known_term / coeff, if strict { if coeff.is_positive() { r(-1) } else { r(1) } } else { Rational::ZERO });
 
                 if coeff.is_positive() {
-                    if let Some(reason) = reason {
-                        self.guard_bounds[reason.0].set_ub(var, val);
+                    if let Some(guard) = guard {
+                        self.guard_bounds[guard.0].set_ub(var, val);
                         Ok(())
                     } else {
-                        self.set_ub(var, val, reason)
+                        self.set_ub(var, val, guard)
                     }
                 } else {
-                    if let Some(reason) = reason {
-                        self.guard_bounds[reason.0].set_lb(var, val);
+                    if let Some(guard) = guard {
+                        self.guard_bounds[guard.0].set_lb(var, val);
                         Ok(())
                     } else {
-                        self.set_lb(var, val, reason)
+                        self.set_lb(var, val, guard)
                     }
                 }
             }
@@ -296,21 +290,21 @@ impl Engine {
                 // If the expression has multiple variables, we introduce a new slack variable and set a bound on it
                 let val = inf(-mem::take(&mut expr.known_term), if strict { r(-1) } else { Rational::ZERO });
                 let slack = self.add_lin_var(expr);
-                if let Some(reason) = reason {
-                    self.guard_bounds[reason.0].set_ub(slack, val);
+                if let Some(guard) = guard {
+                    self.guard_bounds[guard.0].set_ub(slack, val);
                     Ok(())
                 } else {
-                    self.set_ub(slack, val, reason)
+                    self.set_ub(slack, val, guard)
                 }
             }
         }
     }
 
-    pub fn new_le(&mut self, lhs: &Lin, rhs: &Lin, reason: Option<GuardId>) -> Result<(), PropagationError> {
-        self.new_lt(lhs, rhs, false, reason)
+    pub fn new_le(&mut self, lhs: &Lin, rhs: &Lin, guard: Option<GuardId>) -> Result<(), PropagationError> {
+        self.new_lt(lhs, rhs, false, guard)
     }
 
-    pub fn new_eq(&mut self, lhs: &Lin, rhs: &Lin, reason: Option<GuardId>) -> Result<(), PropagationError> {
+    pub fn new_eq(&mut self, lhs: &Lin, rhs: &Lin, guard: Option<GuardId>) -> Result<(), PropagationError> {
         let mut expr = lhs - rhs;
         // Remove basic variables from the expression and substitute with their tableau expressions
         for v in expr.vars.keys().cloned().collect::<Vec<VarId>>() {
@@ -329,22 +323,22 @@ impl Engine {
                 let (&var, &coeff) = expr.vars.iter().next().unwrap();
                 let val = i_rat(-expr.known_term / coeff);
                 if coeff.is_positive() {
-                    if let Some(reason) = reason {
-                        self.guard_bounds[reason.0].set_lb(var, val);
-                        self.guard_bounds[reason.0].set_ub(var, val);
+                    if let Some(guard) = guard {
+                        self.guard_bounds[guard.0].set_lb(var, val);
+                        self.guard_bounds[guard.0].set_ub(var, val);
                         Ok(())
                     } else {
-                        self.set_lb(var, val, reason)?;
-                        self.set_ub(var, val, reason)
+                        self.set_lb(var, val, guard)?;
+                        self.set_ub(var, val, guard)
                     }
                 } else {
-                    if let Some(reason) = reason {
-                        self.guard_bounds[reason.0].set_lb(var, val);
-                        self.guard_bounds[reason.0].set_ub(var, val);
+                    if let Some(guard) = guard {
+                        self.guard_bounds[guard.0].set_lb(var, val);
+                        self.guard_bounds[guard.0].set_ub(var, val);
                         Ok(())
                     } else {
-                        self.set_ub(var, val, reason)?;
-                        self.set_lb(var, val, reason)
+                        self.set_ub(var, val, guard)?;
+                        self.set_lb(var, val, guard)
                     }
                 }
             }
@@ -352,24 +346,24 @@ impl Engine {
                 // If the expression has multiple variables, we introduce a new slack variable and set bounds on it
                 let val = i_rat(-mem::take(&mut expr.known_term));
                 let slack = self.add_lin_var(expr);
-                if let Some(reason) = reason {
-                    self.guard_bounds[reason.0].set_lb(slack, val);
-                    self.guard_bounds[reason.0].set_ub(slack, val);
+                if let Some(guard) = guard {
+                    self.guard_bounds[guard.0].set_lb(slack, val);
+                    self.guard_bounds[guard.0].set_ub(slack, val);
                     Ok(())
                 } else {
-                    self.set_lb(slack, val, reason)?;
-                    self.set_ub(slack, val, reason)
+                    self.set_lb(slack, val, guard)?;
+                    self.set_ub(slack, val, guard)
                 }
             }
         }
     }
 
-    pub fn new_ge(&mut self, lhs: &Lin, rhs: &Lin, reason: Option<GuardId>) -> Result<(), PropagationError> {
-        self.new_lt(rhs, lhs, false, reason)
+    pub fn new_ge(&mut self, lhs: &Lin, rhs: &Lin, guard: Option<GuardId>) -> Result<(), PropagationError> {
+        self.new_lt(rhs, lhs, false, guard)
     }
 
-    pub fn new_gt(&mut self, lhs: &Lin, rhs: &Lin, strict: bool, reason: Option<GuardId>) -> Result<(), PropagationError> {
-        self.new_lt(rhs, lhs, strict, reason)
+    pub fn new_gt(&mut self, lhs: &Lin, rhs: &Lin, strict: bool, guard: Option<GuardId>) -> Result<(), PropagationError> {
+        self.new_lt(rhs, lhs, strict, guard)
     }
 
     /// Activates all bounds registered under `constraint`.
@@ -457,17 +451,17 @@ impl Engine {
                         let mut conflict = Vec::new();
                         for (vr, vl) in &self.tableau[&leaving].vars {
                             if vl.is_positive() {
-                                for reason in self.ubs[vr.0].iter().next().unwrap().1.iter() {
-                                    conflict.push(*reason);
+                                for guard in self.ubs[vr.0].iter().next().unwrap().1.iter() {
+                                    conflict.push(*guard);
                                 }
                             } else if vl.is_negative() {
-                                for reason in self.lbs[vr.0].iter().next_back().unwrap().1.iter() {
-                                    conflict.push(*reason);
+                                for guard in self.lbs[vr.0].iter().next_back().unwrap().1.iter() {
+                                    conflict.push(*guard);
                                 }
                             }
                         }
-                        for reason in self.lbs[leaving.0].iter().next_back().unwrap().1.iter() {
-                            conflict.push(*reason);
+                        for guard in self.lbs[leaving.0].iter().next_back().unwrap().1.iter() {
+                            conflict.push(*guard);
                         }
                         return Err(PropagationError::Conflict(conflict));
                     }
@@ -480,17 +474,17 @@ impl Engine {
                         let mut conflict = Vec::new();
                         for (vr, vl) in &self.tableau[&leaving].vars {
                             if vl.is_positive() {
-                                for reason in self.lbs[vr.0].iter().next_back().unwrap().1.iter() {
-                                    conflict.push(*reason);
+                                for guard in self.lbs[vr.0].iter().next_back().unwrap().1.iter() {
+                                    conflict.push(*guard);
                                 }
                             } else if vl.is_negative() {
-                                for reason in self.ubs[vr.0].iter().next().unwrap().1.iter() {
-                                    conflict.push(*reason);
+                                for guard in self.ubs[vr.0].iter().next().unwrap().1.iter() {
+                                    conflict.push(*guard);
                                 }
                             }
                         }
-                        for reason in self.ubs[leaving.0].iter().next().unwrap().1.iter() {
-                            conflict.push(*reason);
+                        for guard in self.ubs[leaving.0].iter().next().unwrap().1.iter() {
+                            conflict.push(*guard);
                         }
                         return Err(PropagationError::Conflict(conflict));
                     }
@@ -799,7 +793,7 @@ mod tests {
     }
 
     #[test]
-    fn shared_reason_retraction() {
+    fn shared_guard_retraction() {
         let mut e = Engine::new();
         let x = e.add_var();
         let c0 = e.new_guard();
