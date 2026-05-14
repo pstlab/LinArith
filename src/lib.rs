@@ -1,3 +1,23 @@
+//! LinArith is an incremental linear feasibility solver over rational numbers.
+//!
+//! The crate lets you maintain linear constraints over variables and keeps the
+//! current assignments feasible by propagating bound changes through a tableau.
+//! Constraints can be asserted immediately or collected under a guard and
+//! activated later.
+//!
+//! ## Example
+//!
+//! ```rust
+//! use linarith::{c, v, Engine};
+//!
+//! let mut engine = Engine::new();
+//! let x = engine.add_var();
+//!
+//! assert!(engine.new_ge(&v(x), &c(5), None).is_ok());
+//! assert!(engine.new_le(&v(x), &c(10), None).is_ok());
+//! assert!(engine.check().is_ok());
+//! ```
+
 mod inf_rational;
 mod lin;
 mod rational;
@@ -73,6 +93,7 @@ impl Default for Engine {
 }
 
 impl Engine {
+    /// Creates an empty solver instance.
     pub fn new() -> Self {
         Engine {
             assignments: Vec::new(),
@@ -85,6 +106,7 @@ impl Engine {
         }
     }
 
+    /// Adds a fresh unconstrained variable and returns its identifier.
     pub fn add_var(&mut self) -> VarId {
         let index = self.assignments.len();
         self.assignments.push(InfRational::ZERO);
@@ -94,6 +116,10 @@ impl Engine {
         VarId(index)
     }
 
+    /// Adds a fresh variable whose initial value is the value of `lin`.
+    ///
+    /// The linear expression is stored in the tableau as the definition of the
+    /// new basic variable.
     pub fn add_lin_var(&mut self, lin: Lin) -> VarId {
         let index = self.add_var();
         self.assignments[index.0] = self.lin_val(&lin);
@@ -101,6 +127,7 @@ impl Engine {
         index
     }
 
+    /// Creates a new guard used to group constraints for later assertion or retraction.
     pub fn new_guard(&mut self) -> GuardId {
         let index = self.guard_bounds.len();
         self.guard_bounds.push(GuardBounds::new());
@@ -161,6 +188,7 @@ impl Engine {
         result
     }
 
+    /// Returns `true` when the current bounds of `lhs` and `rhs` overlap.
     pub fn overlap(&self, lhs: VarId, rhs: VarId) -> bool {
         self.lb(lhs) < self.ub(rhs) && self.lb(rhs) < self.ub(lhs)
     }
@@ -251,6 +279,10 @@ impl Engine {
         Ok(())
     }
 
+    /// Adds a strict or non-strict upper-bound constraint `lhs < rhs` or `lhs <= rhs`.
+    ///
+    /// If the constraint is satisfiable immediately, the corresponding bound is
+    /// recorded. Otherwise a conflict is returned.
     pub fn new_lt(&mut self, lhs: &Lin, rhs: &Lin, strict: bool, guard: Option<GuardId>) -> Result<(), PropagationError> {
         let mut expr = lhs - rhs;
         // Remove basic variables from the expression and substitute with their tableau expressions
@@ -300,10 +332,12 @@ impl Engine {
         }
     }
 
+    /// Adds the constraint `lhs <= rhs`.
     pub fn new_le(&mut self, lhs: &Lin, rhs: &Lin, guard: Option<GuardId>) -> Result<(), PropagationError> {
         self.new_lt(lhs, rhs, false, guard)
     }
 
+    /// Adds the constraint `lhs == rhs`.
     pub fn new_eq(&mut self, lhs: &Lin, rhs: &Lin, guard: Option<GuardId>) -> Result<(), PropagationError> {
         let mut expr = lhs - rhs;
         // Remove basic variables from the expression and substitute with their tableau expressions
@@ -358,10 +392,12 @@ impl Engine {
         }
     }
 
+    /// Adds the constraint `lhs >= rhs`.
     pub fn new_ge(&mut self, lhs: &Lin, rhs: &Lin, guard: Option<GuardId>) -> Result<(), PropagationError> {
         self.new_lt(rhs, lhs, false, guard)
     }
 
+    /// Adds a strict or non-strict lower-bound constraint `lhs > rhs` or `lhs >= rhs`.
     pub fn new_gt(&mut self, lhs: &Lin, rhs: &Lin, strict: bool, guard: Option<GuardId>) -> Result<(), PropagationError> {
         self.new_lt(rhs, lhs, strict, guard)
     }
