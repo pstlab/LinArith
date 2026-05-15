@@ -113,7 +113,7 @@ impl Engine {
         self.lbs.push(BTreeMap::new());
         self.ubs.push(BTreeMap::new());
         self.t_watches.push(HashSet::new());
-        VarId(index)
+        VarId::new(index)
     }
 
     /// Adds a fresh variable whose initial value is the value of `lin`.
@@ -122,7 +122,7 @@ impl Engine {
     /// new basic variable.
     pub fn add_lin_var(&mut self, lin: Lin) -> VarId {
         let index = self.add_var();
-        self.assignments[index.0] = self.lin_val(&lin);
+        self.assignments[*index] = self.lin_val(&lin);
         self.new_row(index, lin);
         index
     }
@@ -136,19 +136,19 @@ impl Engine {
 
     /// Returns the current assignment of `var`.
     pub fn val(&self, var: VarId) -> &InfRational {
-        &self.assignments[var.0]
+        &self.assignments[*var]
     }
 
     /// Returns the tightest active lower bound of `var`,
     /// or [`InfRational::NEGATIVE_INFINITY`] if none has been set.
     pub fn lb(&self, var: VarId) -> &InfRational {
-        self.lbs[var.0].iter().next_back().map(|(lb, _)| lb).unwrap_or(&InfRational::NEGATIVE_INFINITY)
+        self.lbs[*var].iter().next_back().map(|(lb, _)| lb).unwrap_or(&InfRational::NEGATIVE_INFINITY)
     }
 
     /// Returns the tightest active upper bound of `var`,
     /// or [`InfRational::POSITIVE_INFINITY`] if none has been set.
     pub fn ub(&self, var: VarId) -> &InfRational {
-        self.ubs[var.0].iter().next().map(|(ub, _)| ub).unwrap_or(&InfRational::POSITIVE_INFINITY)
+        self.ubs[*var].iter().next().map(|(ub, _)| ub).unwrap_or(&InfRational::POSITIVE_INFINITY)
     }
 
     /// Evaluates a linear expression under the current variable assignments.
@@ -209,7 +209,7 @@ impl Engine {
             if let Some(guard) = guard {
                 conflict.push(guard);
             }
-            for guard in self.ubs[var.0].iter().next().unwrap().1.iter() {
+            for guard in self.ubs[*var].iter().next().unwrap().1.iter() {
                 conflict.push(*guard);
             }
             return Err(PropagationError::Conflict(conflict)); // Inconsistent constraint
@@ -223,24 +223,24 @@ impl Engine {
                 // Only update if the new bound is tighter (larger)
                 if *c_lb < lb {
                     // Remove the guard from the old bound entry, and delete the entry if it becomes empty
-                    if self.lbs[var.0].get_mut(c_lb).is_some_and(|guards| {
+                    if self.lbs[*var].get_mut(c_lb).is_some_and(|guards| {
                         guards.remove(&guard);
                         guards.is_empty()
                     }) {
-                        self.lbs[var.0].remove(c_lb);
+                        self.lbs[*var].remove(c_lb);
                     }
                     // Add the guard to the new (tighter) bound entry
-                    self.lbs[var.0].entry(lb).or_default().insert(guard);
+                    self.lbs[*var].entry(lb).or_default().insert(guard);
                 }
             } else {
                 // First time setting a lower bound for this (guard, var) pair
-                self.lbs[var.0].entry(lb).or_default().insert(guard);
+                self.lbs[*var].entry(lb).or_default().insert(guard);
             }
             // Update the guard's internal record
             self.guard_bounds[guard.0].set_lb(var, lb);
         } else {
             // Guard-less constraint: just ensure the entry exists for consistency
-            self.lbs[var.0].entry(lb).or_default();
+            self.lbs[*var].entry(lb).or_default();
         }
 
         if self.val(var) < &lb && !self.is_basic(var) {
@@ -266,7 +266,7 @@ impl Engine {
             if let Some(guard) = guard {
                 conflict.push(guard);
             }
-            for guard in self.lbs[var.0].iter().next_back().unwrap().1.iter() {
+            for guard in self.lbs[*var].iter().next_back().unwrap().1.iter() {
                 conflict.push(*guard);
             }
             return Err(PropagationError::Conflict(conflict)); // Inconsistent constraint
@@ -280,24 +280,24 @@ impl Engine {
                 // Only update if the new bound is tighter (smaller)
                 if *c_ub > ub {
                     // Remove the guard from the old bound entry, and delete the entry if it becomes empty
-                    if self.ubs[var.0].get_mut(c_ub).is_some_and(|guards| {
+                    if self.ubs[*var].get_mut(c_ub).is_some_and(|guards| {
                         guards.remove(&guard);
                         guards.is_empty()
                     }) {
-                        self.ubs[var.0].remove(c_ub);
+                        self.ubs[*var].remove(c_ub);
                     }
                     // Add the guard to the new (tighter) bound entry
-                    self.ubs[var.0].entry(ub).or_default().insert(guard);
+                    self.ubs[*var].entry(ub).or_default().insert(guard);
                 }
             } else {
                 // First time setting an upper bound for this (guard, var) pair
-                self.ubs[var.0].entry(ub).or_default().insert(guard);
+                self.ubs[*var].entry(ub).or_default().insert(guard);
             }
             // Update the guard's internal record
             self.guard_bounds[guard.0].set_ub(var, ub);
         } else {
             // Guard-less constraint: just ensure the entry exists for consistency
-            self.ubs[var.0].entry(ub).or_default();
+            self.ubs[*var].entry(ub).or_default();
         }
 
         if self.val(var) > &ub && !self.is_basic(var) {
@@ -460,10 +460,10 @@ impl Engine {
     pub fn retract(&mut self, constraint: GuardId) {
         // Remove the constraint's bounds from the engine
         for (&var, &val) in &self.guard_bounds[constraint.0].lbs {
-            self.lbs[var.0].remove(&val);
+            self.lbs[*var].remove(&val);
         }
         for (&var, &val) in &self.guard_bounds[constraint.0].ubs {
-            self.ubs[var.0].remove(&val);
+            self.ubs[*var].remove(&val);
         }
     }
 
@@ -475,13 +475,13 @@ impl Engine {
         assert!(!self.is_basic(var), "Cannot directly update a basic variable");
         assert!(&new_value >= self.lb(var) && &new_value <= self.ub(var), "New value must be within bounds");
 
-        for &watch in &self.t_watches[var.0] {
+        for &watch in &self.t_watches[*var] {
             let delta = self.tableau[&watch].vars[&var] * (new_value - self.val(var));
-            self.assignments[watch.0] += delta;
+            self.assignments[*watch] += delta;
             self.notify(watch);
         }
 
-        self.assignments[var.0] = new_value;
+        self.assignments[*var] = new_value;
         self.notify(var);
     }
 
@@ -515,16 +515,16 @@ impl Engine {
                         let mut conflict = Vec::new();
                         for (vr, vl) in &self.tableau[&leaving].vars {
                             if vl.is_positive() {
-                                for guard in self.ubs[vr.0].iter().next().unwrap().1.iter() {
+                                for guard in self.ubs[**vr].iter().next().unwrap().1.iter() {
                                     conflict.push(*guard);
                                 }
                             } else if vl.is_negative() {
-                                for guard in self.lbs[vr.0].iter().next_back().unwrap().1.iter() {
+                                for guard in self.lbs[**vr].iter().next_back().unwrap().1.iter() {
                                     conflict.push(*guard);
                                 }
                             }
                         }
-                        for guard in self.lbs[leaving.0].iter().next_back().unwrap().1.iter() {
+                        for guard in self.lbs[*leaving].iter().next_back().unwrap().1.iter() {
                             conflict.push(*guard);
                         }
                         return Err(PropagationError::Conflict(conflict));
@@ -538,16 +538,16 @@ impl Engine {
                         let mut conflict = Vec::new();
                         for (vr, vl) in &self.tableau[&leaving].vars {
                             if vl.is_positive() {
-                                for guard in self.lbs[vr.0].iter().next_back().unwrap().1.iter() {
+                                for guard in self.lbs[**vr].iter().next_back().unwrap().1.iter() {
                                     conflict.push(*guard);
                                 }
                             } else if vl.is_negative() {
-                                for guard in self.ubs[vr.0].iter().next().unwrap().1.iter() {
+                                for guard in self.ubs[**vr].iter().next().unwrap().1.iter() {
                                     conflict.push(*guard);
                                 }
                             }
                         }
-                        for guard in self.ubs[leaving.0].iter().next().unwrap().1.iter() {
+                        for guard in self.ubs[*leaving].iter().next().unwrap().1.iter() {
                             conflict.push(*guard);
                         }
                         return Err(PropagationError::Conflict(conflict));
@@ -564,16 +564,16 @@ impl Engine {
         assert!(!self.is_basic(entering), "Entering variable must be non-basic");
 
         let theta = (new_value - self.val(leaving)) / &self.tableau[&leaving].vars[&entering];
-        self.assignments[leaving.0] = new_value;
+        self.assignments[*leaving] = new_value;
         self.notify(leaving);
-        self.assignments[entering.0] += theta;
+        self.assignments[*entering] += theta;
         self.notify(entering);
 
-        for &watch in &self.t_watches[entering.0] {
+        for &watch in &self.t_watches[*entering] {
             if watch != leaving
                 && let Some(row) = self.tableau.get_mut(&watch)
             {
-                self.assignments[watch.0] += row.vars[&entering] * theta;
+                self.assignments[*watch] += row.vars[&entering] * theta;
                 self.notify(watch);
             }
         }
@@ -587,7 +587,7 @@ impl Engine {
 
         // Remove the leaving variable from the watches of all variables in its tableau row
         for &var in self.tableau[&leaving].vars.keys() {
-            self.t_watches[var.0].remove(&leaving);
+            self.t_watches[*var].remove(&leaving);
         }
 
         // Rewrite the leaving variable's row to express it in terms of the entering variable
@@ -597,17 +597,17 @@ impl Engine {
         new_row.vars.insert(leaving, coeff.reciprocal());
 
         // Substitute the new row into all other rows that contain the entering variable
-        let watches = mem::take(&mut self.t_watches[entering.0]);
+        let watches = mem::take(&mut self.t_watches[*entering]);
         for watch in &watches {
             if watch != &leaving
                 && let Some(row) = self.tableau.get_mut(watch)
             {
                 let (added, removed) = row.substitute(entering, &new_row);
                 for v in added {
-                    self.t_watches[v.0].insert(*watch);
+                    self.t_watches[*v].insert(*watch);
                 }
                 for v in removed {
-                    self.t_watches[v.0].remove(watch);
+                    self.t_watches[*v].remove(watch);
                 }
             }
         }
@@ -619,7 +619,7 @@ impl Engine {
     fn new_row(&mut self, var: VarId, lin: Lin) {
         assert!(!self.is_basic(var), "Variable must be non-basic to add a new row");
         for v in lin.vars.keys() {
-            self.t_watches[v.0].insert(var);
+            self.t_watches[**v].insert(var);
         }
         self.tableau.insert(var, lin);
     }
@@ -647,7 +647,7 @@ impl Engine {
 impl fmt::Display for Engine {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for i in 0..self.assignments.len() {
-            writeln!(f, "{} = {}, [{}, {}]", VarId(i), self.val(VarId(i)), self.lb(VarId(i)), self.ub(VarId(i)))?;
+            writeln!(f, "{} = {}, [{}, {}]", VarId::new(i), self.val(VarId::new(i)), self.lb(VarId::new(i)), self.ub(VarId::new(i)))?;
         }
         for (var, lin) in &self.tableau {
             writeln!(f, "{} = {}", var, lin)?;
@@ -665,8 +665,8 @@ mod tests {
         let mut e = Engine::new();
         let x = e.add_var();
         let y = e.add_var();
-        assert_eq!(x, VarId(0));
-        assert_eq!(y, VarId(1));
+        assert_eq!(x, VarId::new(0));
+        assert_eq!(y, VarId::new(1));
         assert_eq!(e.val(x), &InfRational::ZERO);
         assert_eq!(e.lb(x), &InfRational::NEGATIVE_INFINITY);
         assert_eq!(e.ub(x), &InfRational::POSITIVE_INFINITY);
@@ -759,7 +759,7 @@ mod tests {
         let lhs = Lin::from(x) + Lin::from(y);
         assert!(e.new_le(&lhs, &Lin::from(5), None).is_ok());
         assert!(e.check().is_ok());
-        assert!(e.ub(VarId(e.assignments.len() - 1)) <= &InfRational::from(Rational::from(5))); // slack ub
+        assert!(e.ub(VarId::new(e.assignments.len() - 1)) <= &InfRational::from(Rational::from(5))); // slack ub
     }
 
     #[test]
