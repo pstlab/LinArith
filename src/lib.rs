@@ -23,7 +23,7 @@ mod lin;
 mod rational;
 mod var;
 
-pub use inf_rational::{InfRational, inf};
+pub use inf_rational::InfRational;
 pub use lin::{Lin, vc};
 pub use rational::Rational;
 use std::{
@@ -328,7 +328,7 @@ impl Engine {
             1 => {
                 // If the expression has one variable, we can directly set a bound on it
                 let (&var, &coeff) = expr.vars.iter().next().unwrap();
-                let val = inf(-expr.known_term / coeff, if strict { if coeff.is_positive() { Rational::from(-1) } else { Rational::ONE } } else { Rational::ZERO });
+                let val = InfRational::new(-expr.known_term / coeff, if strict { if coeff.is_positive() { Rational::from(-1) } else { Rational::ONE } } else { Rational::ZERO });
 
                 if coeff.is_positive() {
                     if let Some(guard) = guard {
@@ -348,7 +348,7 @@ impl Engine {
             }
             _ => {
                 // If the expression has multiple variables, we introduce a new slack variable and set a bound on it
-                let val = inf(-mem::take(&mut expr.known_term), if strict { Rational::from(-1) } else { Rational::ZERO });
+                let val = InfRational::new(-mem::take(&mut expr.known_term), if strict { Rational::from(-1) } else { Rational::ZERO });
                 let slack = self.add_lin_var(expr);
                 if let Some(guard) = guard {
                     self.guard_bounds[guard.0].set_ub(slack, val);
