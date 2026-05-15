@@ -26,18 +26,6 @@ impl InfRational {
         InfRational { rat, inf }
     }
 
-    /// Creates an `InfRational` from a standard `Rational`.
-    ///
-    /// The infinitesimal part is set to 0.
-    pub fn from_rational(rat: Rational) -> InfRational {
-        InfRational { rat, inf: Rational::ZERO }
-    }
-
-    /// Creates an `InfRational` from an integer.
-    pub fn from_integer(arg: i64) -> InfRational {
-        InfRational { rat: Rational::from(arg), inf: Rational::ZERO }
-    }
-
     pub const POSITIVE_INFINITY: Self = Self { rat: Rational::POSITIVE_INFINITY, inf: Rational::ZERO };
     pub const NEGATIVE_INFINITY: Self = Self { rat: Rational::NEGATIVE_INFINITY, inf: Rational::ZERO };
     pub const ZERO: Self = Self { rat: Rational::ZERO, inf: Rational::ZERO };
@@ -45,13 +33,13 @@ impl InfRational {
 
 impl From<Rational> for InfRational {
     fn from(arg: Rational) -> Self {
-        InfRational::from_rational(arg)
+        InfRational { rat: arg, inf: Rational::ZERO }
     }
 }
 
 impl From<i64> for InfRational {
     fn from(arg: i64) -> Self {
-        InfRational::from_integer(arg)
+        InfRational { rat: Rational::from(arg), inf: Rational::ZERO }
     }
 }
 
@@ -407,14 +395,6 @@ impl Display for InfRational {
     }
 }
 
-pub fn i_i(arg: i64) -> InfRational {
-    InfRational::from_integer(arg)
-}
-
-pub fn i_rat(arg: Rational) -> InfRational {
-    InfRational::from_rational(arg)
-}
-
 pub fn inf_i(arg: i64) -> InfRational {
     InfRational::new(Rational::ZERO, Rational::from(arg))
 }
@@ -442,20 +422,20 @@ mod tests {
         let ir2 = inf(Rational::new(2, 4), Rational::new(3, 4));
         assert_eq!(ir1, ir2);
 
-        let ir3 = i_rat(Rational::new(1, 2));
+        let ir3 = InfRational::from(Rational::new(1, 2));
         let ra = Rational::new(1, 2);
         assert_eq!(ir3, &ra);
 
         // This fails to compile if PartialEq<i64> isn't implemented correctly or type inference fails
         // PartialEquals<i64> is implemented.
-        let ir4 = i_rat(Rational::from(5));
+        let ir4 = InfRational::from(Rational::from(5));
         assert_eq!(ir4, 5);
     }
 
     #[test]
     fn test_ord() {
         let ir1 = inf_i(1); // 1ε
-        let ir2 = i_rat(Rational::from(100)); // 100
+        let ir2 = InfRational::from(Rational::from(100)); // 100
 
         // 1ε < 100
         assert!(ir1 < ir2);
@@ -521,12 +501,12 @@ mod tests {
     fn test_from_conversions() {
         // Test from_rational
         let rat_val = Rational::new(3, 4);
-        let ir = InfRational::from_rational(rat_val);
+        let ir = InfRational::from(rat_val);
         assert_eq!(ir.rat, rat_val);
         assert_eq!(ir.inf, Rational::ZERO);
 
         // Test from_integer
-        let ir2 = InfRational::from_integer(42);
+        let ir2 = InfRational::from(42);
         assert_eq!(ir2.rat, Rational::from(42));
         assert_eq!(ir2.inf, Rational::ZERO);
 
@@ -553,7 +533,7 @@ mod tests {
         assert!(ir < &rat_six);
 
         // Test when rational parts are equal
-        let ir_exact = i_rat(Rational::from(5)); // 5 + 0ε
+        let ir_exact = InfRational::from(Rational::from(5)); // 5 + 0ε
         assert!(ir_exact == &rat_five);
     }
 
@@ -567,7 +547,7 @@ mod tests {
         assert!(ir < 6);
 
         // Test equality
-        let ir_exact = i_rat(Rational::from(5)); // 5 + 0ε
+        let ir_exact = InfRational::from(Rational::from(5)); // 5 + 0ε
         assert!(ir_exact == 5);
 
         // Test with negative infinitesimal
@@ -856,7 +836,7 @@ mod tests {
     #[test]
     fn test_display_variations() {
         // Test with zero infinitesimal part
-        let ir1 = i_rat(Rational::from(5));
+        let ir1 = InfRational::from(Rational::from(5));
         assert_eq!(format!("{}", ir1), "5");
 
         // Test with only infinitesimal part (rat = 0)
@@ -875,12 +855,12 @@ mod tests {
     #[test]
     fn test_helper_functions() {
         // Test i_i
-        let ir1 = i_i(42);
-        assert_eq!(ir1, InfRational::from_integer(42));
+        let ir1 = InfRational::from(42);
+        assert_eq!(ir1, InfRational::from(42));
 
-        // Test i_rat
-        let ir2 = i_rat(Rational::new(3, 4));
-        assert_eq!(ir2, InfRational::from_rational(Rational::new(3, 4)));
+        // Test InfRational::from
+        let ir2 = InfRational::from(Rational::new(3, 4));
+        assert_eq!(ir2, InfRational::from(Rational::new(3, 4)));
 
         // Test inf_i
         let ir3 = inf_i(5);
