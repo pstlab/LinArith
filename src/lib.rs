@@ -25,7 +25,7 @@ mod var;
 
 pub use inf_rational::{InfRational, i_i, i_rat, inf, inf_i};
 pub use lin::{Lin, c, v, vc};
-pub use rational::{Rational, r, rat};
+pub use rational::Rational;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fmt, mem,
@@ -328,7 +328,7 @@ impl Engine {
             1 => {
                 // If the expression has one variable, we can directly set a bound on it
                 let (&var, &coeff) = expr.vars.iter().next().unwrap();
-                let val = inf(-expr.known_term / coeff, if strict { if coeff.is_positive() { r(-1) } else { r(1) } } else { Rational::ZERO });
+                let val = inf(-expr.known_term / coeff, if strict { if coeff.is_positive() { Rational::from(-1) } else { Rational::from(1) } } else { Rational::ZERO });
 
                 if coeff.is_positive() {
                     if let Some(guard) = guard {
@@ -348,7 +348,7 @@ impl Engine {
             }
             _ => {
                 // If the expression has multiple variables, we introduce a new slack variable and set a bound on it
-                let val = inf(-mem::take(&mut expr.known_term), if strict { r(-1) } else { Rational::ZERO });
+                let val = inf(-mem::take(&mut expr.known_term), if strict { Rational::from(-1) } else { Rational::ZERO });
                 let slack = self.add_lin_var(expr);
                 if let Some(guard) = guard {
                     self.guard_bounds[guard.0].set_ub(slack, val);
@@ -716,7 +716,7 @@ mod tests {
         let mut e = Engine::new();
         let x = e.add_var();
         assert!(e.new_le(&v(x), &c(10), None).is_ok()); // x <= 10
-        assert!(e.ub(x) <= &i_rat(r(10))); // or exact depending on inf()
+        assert!(e.ub(x) <= &i_rat(Rational::from(10))); // or exact depending on inf()
         assert!(e.check().is_ok());
     }
 
@@ -725,7 +725,7 @@ mod tests {
         let mut e = Engine::new();
         let x = e.add_var();
         assert!(e.new_gt(&v(x), &c(5), true, None).is_ok()); // x > 5
-        assert!(e.lb(x) >= &i_rat(r(5))); // adjusted for strict
+        assert!(e.lb(x) >= &i_rat(Rational::from(5))); // adjusted for strict
         assert!(e.check().is_ok());
     }
 
@@ -735,7 +735,7 @@ mod tests {
         let x = e.add_var();
         assert!(e.new_eq(&v(x), &c(42), None).is_ok());
         assert_eq!(e.lb(x), e.ub(x));
-        assert_eq!(e.val(x), &i_rat(r(42)));
+        assert_eq!(e.val(x), &i_rat(Rational::from(42)));
     }
 
     #[test]
@@ -761,7 +761,7 @@ mod tests {
         let lhs = vc(x, 1) + vc(y, 1);
         assert!(e.new_le(&lhs, &c(5), None).is_ok());
         assert!(e.check().is_ok());
-        assert!(e.ub(VarId(e.assignments.len() - 1)) <= &i_rat(r(5))); // slack ub
+        assert!(e.ub(VarId(e.assignments.len() - 1)) <= &i_rat(Rational::from(5))); // slack ub
     }
 
     #[test]
@@ -816,7 +816,7 @@ mod tests {
 
         engine.set_listener(a, move |var, val, _lb, _ub| {
             assert_eq!(var, a);
-            assert_eq!(val, &i_rat(r(5)));
+            assert_eq!(val, &i_rat(Rational::from(5)));
             *called_clone.lock().unwrap() = true;
         });
 
@@ -958,9 +958,9 @@ mod tests {
         assert!(e.new_ge(&v(x), &c(5), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
         assert!(e.check().is_ok());
-        assert!(e.lb(x) == &i_rat(r(5)));
+        assert!(e.lb(x) == &i_rat(Rational::from(5)));
         assert!(e.ub(x) == &InfRational::POSITIVE_INFINITY);
-        assert!(e.val(x) >= &i_rat(r(5)));
+        assert!(e.val(x) >= &i_rat(Rational::from(5)));
 
         // Retract constraint
         e.retract(c0);
@@ -971,9 +971,9 @@ mod tests {
         // Re-add the same constraint
         assert!(e.assert(c0).is_ok());
         assert!(e.check().is_ok());
-        assert!(e.lb(x) == &i_rat(r(5)));
+        assert!(e.lb(x) == &i_rat(Rational::from(5)));
         assert!(e.ub(x) == &InfRational::POSITIVE_INFINITY);
-        assert!(e.val(x) >= &i_rat(r(5)));
+        assert!(e.val(x) >= &i_rat(Rational::from(5)));
     }
 
     #[test]
@@ -986,7 +986,7 @@ mod tests {
         assert!(e.assert(c0).is_ok());
         assert!(e.new_le(&v(x), &c(10), Some(c1)).is_ok()); // tighter
         assert!(e.assert(c1).is_ok());
-        assert!(e.ub(x) <= &i_rat(r(10)));
+        assert!(e.ub(x) <= &i_rat(Rational::from(10)));
     }
 
     #[test]
@@ -1012,12 +1012,12 @@ mod tests {
         // lb = 10 - 2*ub(x) + 3*lb(y) = 10 - 2*5 + 3*3 = 10 - 10 + 9 = 9
         let lin = c(10) + vc(x, -2) + vc(y, 3);
         let lb = e.lin_lb(&lin);
-        assert_eq!(lb, i_rat(r(9)));
+        assert_eq!(lb, i_rat(Rational::from(9)));
 
         // Test lin_ub with negative coefficient
         // ub = 10 - 2*lb(x) + 3*ub(y) = 10 - 2*2 + 3*7 = 10 - 4 + 21 = 27
         let ub = e.lin_ub(&lin);
-        assert_eq!(ub, i_rat(r(27)));
+        assert_eq!(ub, i_rat(Rational::from(27)));
     }
 
     #[test]
@@ -1030,17 +1030,17 @@ mod tests {
         // Set initial lower bound
         assert!(e.new_ge(&v(x), &c(5), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
-        assert_eq!(e.lb(x), &i_rat(r(5)));
+        assert_eq!(e.lb(x), &i_rat(Rational::from(5)));
 
         // Set tighter lower bound with same constraint
-        assert!(e.set_lb(x, i_rat(r(7)), Some(c0)).is_ok());
+        assert!(e.set_lb(x, i_rat(Rational::from(7)), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
-        assert_eq!(e.lb(x), &i_rat(r(7)));
+        assert_eq!(e.lb(x), &i_rat(Rational::from(7)));
 
         // Try looser bound (should not tighten)
-        assert!(e.set_lb(x, i_rat(r(6)), Some(c1)).is_ok());
+        assert!(e.set_lb(x, i_rat(Rational::from(6)), Some(c1)).is_ok());
         assert!(e.assert(c1).is_ok());
-        assert_eq!(e.lb(x), &i_rat(r(7))); // Still 7
+        assert_eq!(e.lb(x), &i_rat(Rational::from(7))); // Still 7
     }
 
     #[test]
@@ -1051,15 +1051,15 @@ mod tests {
 
         assert!(e.new_ge(&v(x), &c(5), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
-        assert_eq!(e.lb(x), &i_rat(r(5)));
+        assert_eq!(e.lb(x), &i_rat(Rational::from(5)));
 
-        assert!(e.set_lb(x, i_rat(r(7)), Some(c0)).is_ok());
+        assert!(e.set_lb(x, i_rat(Rational::from(7)), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
-        assert_eq!(e.lb(x), &i_rat(r(7)));
+        assert_eq!(e.lb(x), &i_rat(Rational::from(7)));
 
-        assert!(e.set_lb(x, i_rat(r(6)), Some(c0)).is_ok());
+        assert!(e.set_lb(x, i_rat(Rational::from(6)), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
-        assert_eq!(e.lb(x), &i_rat(r(7)));
+        assert_eq!(e.lb(x), &i_rat(Rational::from(7)));
 
         e.retract(c0);
         assert_eq!(e.lb(x), &InfRational::NEGATIVE_INFINITY);
@@ -1075,17 +1075,17 @@ mod tests {
         // Set initial upper bound
         assert!(e.new_le(&v(x), &c(10), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
-        assert_eq!(e.ub(x), &i_rat(r(10)));
+        assert_eq!(e.ub(x), &i_rat(Rational::from(10)));
 
         // Set tighter upper bound with same constraint
-        assert!(e.set_ub(x, i_rat(r(8)), Some(c0)).is_ok());
+        assert!(e.set_ub(x, i_rat(Rational::from(8)), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
-        assert_eq!(e.ub(x), &i_rat(r(8)));
+        assert_eq!(e.ub(x), &i_rat(Rational::from(8)));
 
         // Try looser bound (should not tighten)
-        assert!(e.set_ub(x, i_rat(r(9)), Some(c1)).is_ok());
+        assert!(e.set_ub(x, i_rat(Rational::from(9)), Some(c1)).is_ok());
         assert!(e.assert(c1).is_ok());
-        assert_eq!(e.ub(x), &i_rat(r(8))); // Still 8
+        assert_eq!(e.ub(x), &i_rat(Rational::from(8))); // Still 8
     }
 
     #[test]
@@ -1096,15 +1096,15 @@ mod tests {
 
         assert!(e.new_le(&v(x), &c(10), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
-        assert_eq!(e.ub(x), &i_rat(r(10)));
+        assert_eq!(e.ub(x), &i_rat(Rational::from(10)));
 
-        assert!(e.set_ub(x, i_rat(r(8)), Some(c0)).is_ok());
+        assert!(e.set_ub(x, i_rat(Rational::from(8)), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
-        assert_eq!(e.ub(x), &i_rat(r(8)));
+        assert_eq!(e.ub(x), &i_rat(Rational::from(8)));
 
-        assert!(e.set_ub(x, i_rat(r(9)), Some(c0)).is_ok());
+        assert!(e.set_ub(x, i_rat(Rational::from(9)), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
-        assert_eq!(e.ub(x), &i_rat(r(8)));
+        assert_eq!(e.ub(x), &i_rat(Rational::from(8)));
 
         e.retract(c0);
         assert_eq!(e.ub(x), &InfRational::POSITIVE_INFINITY);
@@ -1140,13 +1140,13 @@ mod tests {
         let c0 = e.add_guard();
 
         // Manually set bounds on constraint
-        e.guard_bounds[c0.0].lbs.insert(x, i_rat(r(5)));
-        e.guard_bounds[c0.0].ubs.insert(x, i_rat(r(10)));
+        e.guard_bounds[c0.0].lbs.insert(x, i_rat(Rational::from(5)));
+        e.guard_bounds[c0.0].ubs.insert(x, i_rat(Rational::from(10)));
 
         // Assert the constraint
         assert!(e.assert(c0).is_ok());
-        assert_eq!(e.lb(x), &i_rat(r(5)));
-        assert_eq!(e.ub(x), &i_rat(r(10)));
+        assert_eq!(e.lb(x), &i_rat(Rational::from(5)));
+        assert_eq!(e.ub(x), &i_rat(Rational::from(10)));
     }
 
     #[test]
@@ -1157,15 +1157,15 @@ mod tests {
         let c1 = e.add_guard();
 
         // Set initial bounds
-        e.guard_bounds[c0.0].lbs.insert(x, i_rat(r(10)));
+        e.guard_bounds[c0.0].lbs.insert(x, i_rat(Rational::from(10)));
         assert!(e.assert(c0).is_ok());
 
         // Create conflicting constraint
-        e.guard_bounds[c1.0].ubs.insert(x, i_rat(r(5)));
+        e.guard_bounds[c1.0].ubs.insert(x, i_rat(Rational::from(5)));
         assert!(e.assert(c1).is_err()); // Should fail
 
         // Verify the constraint was retracted
-        assert_eq!(e.lb(x), &i_rat(r(10)));
+        assert_eq!(e.lb(x), &i_rat(Rational::from(10)));
         // Upper bound should still be infinity (constraint was retracted)
         assert_eq!(e.ub(x), &InfRational::POSITIVE_INFINITY);
     }
@@ -1184,7 +1184,7 @@ mod tests {
         assert!(e.check().is_ok());
 
         // y should be at most 5
-        assert!(e.val(y) <= &i_rat(r(5)));
+        assert!(e.val(y) <= &i_rat(Rational::from(5)));
     }
 
     #[test]
@@ -1219,9 +1219,9 @@ mod tests {
 
         // Single variable equation: x = 5
         assert!(e.new_eq(&v(x), &c(5), None).is_ok());
-        assert_eq!(e.val(x), &i_rat(r(5)));
-        assert_eq!(e.lb(x), &i_rat(r(5)));
-        assert_eq!(e.ub(x), &i_rat(r(5)));
+        assert_eq!(e.val(x), &i_rat(Rational::from(5)));
+        assert_eq!(e.lb(x), &i_rat(Rational::from(5)));
+        assert_eq!(e.ub(x), &i_rat(Rational::from(5)));
     }
 
     #[test]
@@ -1244,7 +1244,7 @@ mod tests {
 
         // x >= 5
         assert!(e.new_ge(&v(x), &c(5), None).is_ok());
-        assert_eq!(e.lb(x), &i_rat(r(5)));
+        assert_eq!(e.lb(x), &i_rat(Rational::from(5)));
     }
 
     #[test]
@@ -1255,7 +1255,7 @@ mod tests {
         // x > 5 (strict)
         assert!(e.new_gt(&v(x), &c(5), true, None).is_ok());
         // Lower bound should be adjusted for strict inequality
-        assert!(e.lb(x) > &i_rat(r(5)));
+        assert!(e.lb(x) > &i_rat(Rational::from(5)));
     }
 
     #[test]
@@ -1289,6 +1289,6 @@ mod tests {
 
         // g1's constraint is gone, but g2's remains
         assert_eq!(engine.lb(x), &InfRational::NEGATIVE_INFINITY); // x is unbounded
-        assert_eq!(engine.ub(y), &i_rat(r(10))); // y <= 10 still active!
+        assert_eq!(engine.ub(y), &i_rat(Rational::from(10))); // y <= 10 still active!
     }
 }

@@ -46,11 +46,6 @@ impl Rational {
         }
     }
 
-    /// Creates a `Rational` number from an integer.
-    pub fn from_integer(arg: i64) -> Rational {
-        Rational::new(arg, 1)
-    }
-
     pub fn reciprocal(&self) -> Self {
         assert!(self.num != 0, "Cannot take reciprocal of zero");
         Rational::new(self.den, self.num)
@@ -80,7 +75,7 @@ impl Rational {
 
 impl From<i64> for Rational {
     fn from(arg: i64) -> Self {
-        Rational::from_integer(arg)
+        Rational::new(arg, 1)
     }
 }
 
@@ -451,26 +446,18 @@ fn gcd(mut a: i64, mut b: i64) -> i64 {
     a
 }
 
-pub fn r(n: i64) -> Rational {
-    Rational::from_integer(n)
-}
-
-pub fn rat(num: i64, den: i64) -> Rational {
-    Rational::new(num, den)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_new_and_normalization() {
-        assert_eq!(rat(2, 4), rat(1, 2));
-        assert_eq!(rat(-2, 4), rat(-1, 2));
-        assert_eq!(rat(2, -4), rat(-1, 2));
-        assert_eq!(rat(-2, -4), rat(1, 2));
-        assert_eq!(rat(0, 5), Rational::ZERO);
-        assert_eq!(rat(5, 0), Rational::POSITIVE_INFINITY);
+        assert_eq!(Rational::new(2, 4), Rational::new(1, 2));
+        assert_eq!(Rational::new(-2, 4), Rational::new(-1, 2));
+        assert_eq!(Rational::new(2, -4), Rational::new(-1, 2));
+        assert_eq!(Rational::new(-2, -4), Rational::new(1, 2));
+        assert_eq!(Rational::new(0, 5), Rational::ZERO);
+        assert_eq!(Rational::new(5, 0), Rational::POSITIVE_INFINITY);
     }
 
     #[test]
@@ -481,116 +468,116 @@ mod tests {
 
     #[test]
     fn test_add() {
-        let a = rat(1, 2);
-        let b = rat(1, 3);
-        assert_eq!(a + &b, rat(5, 6));
-        assert_eq!(a + 1, rat(3, 2));
-        assert_eq!(&a + &b, rat(5, 6));
-        assert_eq!(&a + 1, rat(3, 2));
-        assert_eq!(1 + &a, rat(3, 2));
-        assert_eq!(1 + a, rat(3, 2));
+        let a = Rational::new(1, 2);
+        let b = Rational::new(1, 3);
+        assert_eq!(a + &b, Rational::new(5, 6));
+        assert_eq!(a + 1, Rational::new(3, 2));
+        assert_eq!(&a + &b, Rational::new(5, 6));
+        assert_eq!(&a + 1, Rational::new(3, 2));
+        assert_eq!(1 + &a, Rational::new(3, 2));
+        assert_eq!(1 + a, Rational::new(3, 2));
     }
 
     #[test]
     fn test_add_assign() {
-        let mut a = rat(1, 2);
-        a += &rat(1, 3);
-        assert_eq!(a, rat(5, 6));
+        let mut a = Rational::new(1, 2);
+        a += &Rational::new(1, 3);
+        assert_eq!(a, Rational::new(5, 6));
 
-        let mut b = rat(1, 2);
+        let mut b = Rational::new(1, 2);
         b += 1;
-        assert_eq!(b, rat(3, 2));
+        assert_eq!(b, Rational::new(3, 2));
     }
 
     #[test]
     fn test_sub() {
-        let a = rat(1, 2);
-        let b = rat(1, 3);
-        assert_eq!(a - &b, rat(1, 6));
-        assert_eq!(a - 1, rat(-1, 2));
-        assert_eq!(&a - &b, rat(1, 6));
-        assert_eq!(&a - 1, rat(-1, 2));
-        assert_eq!(1 - &a, rat(1, 2));
-        assert_eq!(1 - a, rat(1, 2));
+        let a = Rational::new(1, 2);
+        let b = Rational::new(1, 3);
+        assert_eq!(a - &b, Rational::new(1, 6));
+        assert_eq!(a - 1, Rational::new(-1, 2));
+        assert_eq!(&a - &b, Rational::new(1, 6));
+        assert_eq!(&a - 1, Rational::new(-1, 2));
+        assert_eq!(1 - &a, Rational::new(1, 2));
+        assert_eq!(1 - a, Rational::new(1, 2));
     }
 
     #[test]
     fn test_sub_assign() {
-        let mut a = rat(1, 2);
-        a -= &rat(1, 3);
-        assert_eq!(a, rat(1, 6));
+        let mut a = Rational::new(1, 2);
+        a -= &Rational::new(1, 3);
+        assert_eq!(a, Rational::new(1, 6));
 
-        let mut b = rat(1, 2);
+        let mut b = Rational::new(1, 2);
         b -= 1;
-        assert_eq!(b, rat(-1, 2));
+        assert_eq!(b, Rational::new(-1, 2));
     }
 
     #[test]
     fn test_mul() {
-        let a = rat(1, 2);
-        let b = rat(2, 3);
-        assert_eq!(a * &b, rat(1, 3));
-        assert_eq!(a * 2, r(1));
-        assert_eq!(&a * &b, rat(1, 3));
-        assert_eq!(&a * 2, r(1));
-        assert_eq!(2 * &a, r(1));
-        assert_eq!(2 * a, r(1));
+        let a = Rational::new(1, 2);
+        let b = Rational::new(2, 3);
+        assert_eq!(a * &b, Rational::new(1, 3));
+        assert_eq!(a * 2, Rational::from(1));
+        assert_eq!(&a * &b, Rational::new(1, 3));
+        assert_eq!(&a * 2, Rational::from(1));
+        assert_eq!(2 * &a, Rational::from(1));
+        assert_eq!(2 * a, Rational::from(1));
     }
 
     #[test]
     fn test_mul_assign() {
-        let mut a = rat(1, 2);
-        a *= &rat(2, 3);
-        assert_eq!(a, rat(1, 3));
+        let mut a = Rational::new(1, 2);
+        a *= &Rational::new(2, 3);
+        assert_eq!(a, Rational::new(1, 3));
 
-        let mut b = rat(1, 2);
+        let mut b = Rational::new(1, 2);
         b *= 2;
-        assert_eq!(b, r(1));
+        assert_eq!(b, Rational::from(1));
     }
 
     #[test]
     fn test_div() {
-        let a = rat(1, 2);
-        let b = rat(2, 3);
-        assert_eq!(a / &b, rat(3, 4));
-        assert_eq!(a / 2, rat(1, 4));
-        assert_eq!(&a / &b, rat(3, 4));
-        assert_eq!(&a / 2, rat(1, 4));
-        assert_eq!(2 / &a, r(4));
-        assert_eq!(2 / a, r(4));
+        let a = Rational::new(1, 2);
+        let b = Rational::new(2, 3);
+        assert_eq!(a / &b, Rational::new(3, 4));
+        assert_eq!(a / 2, Rational::new(1, 4));
+        assert_eq!(&a / &b, Rational::new(3, 4));
+        assert_eq!(&a / 2, Rational::new(1, 4));
+        assert_eq!(2 / &a, Rational::from(4));
+        assert_eq!(2 / a, Rational::from(4));
     }
 
     #[test]
     fn test_div_assign() {
-        let mut a = rat(1, 2);
-        a /= &rat(2, 3);
-        assert_eq!(a, rat(3, 4));
+        let mut a = Rational::new(1, 2);
+        a /= &Rational::new(2, 3);
+        assert_eq!(a, Rational::new(3, 4));
 
-        let mut b = rat(1, 2);
+        let mut b = Rational::new(1, 2);
         b /= 2;
-        assert_eq!(b, rat(1, 4));
+        assert_eq!(b, Rational::new(1, 4));
     }
 
     #[test]
     fn test_neg() {
-        let a = rat(1, 2);
-        assert_eq!(-a, rat(-1, 2));
-        assert_eq!(-rat(-1, 2), rat(1, 2));
+        let a = Rational::new(1, 2);
+        assert_eq!(-a, Rational::new(-1, 2));
+        assert_eq!(-Rational::new(-1, 2), Rational::new(1, 2));
     }
 
     #[test]
     fn test_display() {
-        assert_eq!(format!("{}", rat(1, 2)), "1/2");
-        assert_eq!(format!("{}", r(2)), "2");
-        assert_eq!(format!("{}", rat(0, 5)), "0");
-        assert_eq!(format!("{}", rat(-1, 2)), "-1/2");
+        assert_eq!(format!("{}", Rational::new(1, 2)), "1/2");
+        assert_eq!(format!("{}", Rational::from(2)), "2");
+        assert_eq!(format!("{}", Rational::new(0, 5)), "0");
+        assert_eq!(format!("{}", Rational::new(-1, 2)), "-1/2");
     }
 
     #[test]
     fn test_comparison() {
-        let a = rat(1, 2);
-        let b = rat(1, 3);
-        let c = rat(1, 2);
+        let a = Rational::new(1, 2);
+        let b = Rational::new(1, 3);
+        let c = Rational::new(1, 2);
 
         assert!(a > b);
         assert!(b < a);
@@ -600,25 +587,25 @@ mod tests {
         assert!(a <= c);
 
         // Comparison with i64
-        let d = rat(4, 2); // 2
+        let d = Rational::new(4, 2); // 2
         assert!(d == 2);
         assert!(d <= 2);
         assert!(d >= 2);
         assert!(d < 3);
         assert!(d > 1);
 
-        let e = rat(1, 2);
+        let e = Rational::new(1, 2);
         assert!(e < 1);
         assert!(e > 0);
     }
 
     #[test]
     fn test_ordering() {
-        let mut list = vec![rat(1, 2), rat(1, 3), rat(3, 2), rat(-1, 2), rat(0, 1), Rational::POSITIVE_INFINITY, Rational::NEGATIVE_INFINITY];
+        let mut list = vec![Rational::new(1, 2), Rational::new(1, 3), Rational::new(3, 2), Rational::new(-1, 2), Rational::new(0, 1), Rational::POSITIVE_INFINITY, Rational::NEGATIVE_INFINITY];
 
         list.sort();
 
-        let expected = vec![Rational::NEGATIVE_INFINITY, rat(-1, 2), Rational::ZERO, rat(1, 3), rat(1, 2), rat(3, 2), Rational::POSITIVE_INFINITY];
+        let expected = vec![Rational::NEGATIVE_INFINITY, Rational::new(-1, 2), Rational::ZERO, Rational::new(1, 3), Rational::new(1, 2), Rational::new(3, 2), Rational::POSITIVE_INFINITY];
 
         assert_eq!(list, expected);
     }
@@ -627,7 +614,7 @@ mod tests {
     fn test_infinity_arithmetic() {
         let inf = Rational::POSITIVE_INFINITY;
         let neg_inf = Rational::NEGATIVE_INFINITY;
-        let one = r(1);
+        let one = Rational::from(1);
 
         // Addition involving infinity
         assert_eq!(inf + one, inf);
@@ -717,14 +704,14 @@ mod tests {
 
     #[test]
     fn test_reciprocal() {
-        let a = rat(3, 4);
-        assert_eq!(a.reciprocal(), rat(4, 3));
+        let a = Rational::new(3, 4);
+        assert_eq!(a.reciprocal(), Rational::new(4, 3));
 
-        let b = r(5);
-        assert_eq!(b.reciprocal(), rat(1, 5));
+        let b = Rational::from(5);
+        assert_eq!(b.reciprocal(), Rational::new(1, 5));
 
-        let c = rat(-2, 3);
-        assert_eq!(c.reciprocal(), rat(-3, 2));
+        let c = Rational::new(-2, 3);
+        assert_eq!(c.reciprocal(), Rational::new(-3, 2));
 
         // Infinity's reciprocal is zero
         let inf = Rational::POSITIVE_INFINITY;
@@ -741,18 +728,18 @@ mod tests {
     fn test_add_assign_with_ref_and_infinity() {
         // Test AddAssign<&Rational> with infinity
         let mut a = Rational::POSITIVE_INFINITY;
-        a += &r(5);
+        a += &Rational::from(5);
         assert_eq!(a, Rational::POSITIVE_INFINITY);
 
         let mut b = Rational::NEGATIVE_INFINITY;
-        b += &r(10);
+        b += &Rational::from(10);
         assert_eq!(b, Rational::NEGATIVE_INFINITY);
 
-        let mut c = r(5);
+        let mut c = Rational::from(5);
         c += &Rational::POSITIVE_INFINITY;
         assert_eq!(c, Rational::POSITIVE_INFINITY);
 
-        let mut d = r(5);
+        let mut d = Rational::from(5);
         d += &Rational::NEGATIVE_INFINITY;
         assert_eq!(d, Rational::NEGATIVE_INFINITY);
 
@@ -770,15 +757,15 @@ mod tests {
     fn test_add_assign_infinity_early_return() {
         // Test AddAssign (non-ref) with self = infinity returning early
         let mut a = Rational::POSITIVE_INFINITY;
-        a += r(5);
+        a += Rational::from(5);
         assert_eq!(a, Rational::POSITIVE_INFINITY);
 
         let mut b = Rational::NEGATIVE_INFINITY;
-        b += r(10);
+        b += Rational::from(10);
         assert_eq!(b, Rational::NEGATIVE_INFINITY);
 
         // Test with other = infinity
-        let mut c = r(5);
+        let mut c = Rational::from(5);
         c += Rational::POSITIVE_INFINITY;
         assert_eq!(c, Rational::POSITIVE_INFINITY);
     }
@@ -801,18 +788,18 @@ mod tests {
     fn test_sub_assign_with_ref_and_infinity() {
         // Test SubAssign<&Rational> with infinity
         let mut a = Rational::POSITIVE_INFINITY;
-        a -= &r(5);
+        a -= &Rational::from(5);
         assert_eq!(a, Rational::POSITIVE_INFINITY);
 
         let mut b = Rational::NEGATIVE_INFINITY;
-        b -= &r(10);
+        b -= &Rational::from(10);
         assert_eq!(b, Rational::NEGATIVE_INFINITY);
 
-        let mut c = r(5);
+        let mut c = Rational::from(5);
         c -= &Rational::POSITIVE_INFINITY;
         assert_eq!(c, Rational::NEGATIVE_INFINITY);
 
-        let mut d = r(5);
+        let mut d = Rational::from(5);
         d -= &Rational::NEGATIVE_INFINITY;
         assert_eq!(d, Rational::POSITIVE_INFINITY);
 
@@ -830,19 +817,19 @@ mod tests {
     fn test_sub_assign_infinity_early_return() {
         // Test SubAssign (non-ref) with self = infinity returning early
         let mut a = Rational::POSITIVE_INFINITY;
-        a -= r(5);
+        a -= Rational::from(5);
         assert_eq!(a, Rational::POSITIVE_INFINITY);
 
         let mut b = Rational::NEGATIVE_INFINITY;
-        b -= r(10);
+        b -= Rational::from(10);
         assert_eq!(b, Rational::NEGATIVE_INFINITY);
 
         // Test with other = infinity
-        let mut c = r(5);
+        let mut c = Rational::from(5);
         c -= Rational::POSITIVE_INFINITY;
         assert_eq!(c, Rational::NEGATIVE_INFINITY);
 
-        let mut d = r(5);
+        let mut d = Rational::from(5);
         d -= Rational::NEGATIVE_INFINITY;
         assert_eq!(d, Rational::POSITIVE_INFINITY);
     }
