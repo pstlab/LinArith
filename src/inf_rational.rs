@@ -860,7 +860,7 @@ mod tests {
         assert_eq!(format!("{}", ir1), "5");
 
         // Test with only infinitesimal part (rat = 0)
-        let ir2 = inf(Rational::from(0), Rational::from(3));
+        let ir2 = inf(Rational::ZERO, Rational::from(3));
         assert_eq!(format!("{}", ir2), "3ε");
 
         // Test with positive infinitesimal
