@@ -8,13 +8,13 @@
 //! ## Example
 //!
 //! ```rust
-//! use linarith::{v, Engine, Lin};
+//! use linarith::{Engine, Lin};
 //!
 //! let mut engine = Engine::new();
 //! let x = engine.add_var();
 //!
-//! assert!(engine.new_ge(&v(x), &Lin::from(5), None).is_ok());
-//! assert!(engine.new_le(&v(x), &Lin::from(10), None).is_ok());
+//! assert!(engine.new_ge(&Lin::from(x), &Lin::from(5), None).is_ok());
+//! assert!(engine.new_le(&Lin::from(x), &Lin::from(10), None).is_ok());
 //! assert!(engine.check().is_ok());
 //! ```
 
@@ -24,7 +24,7 @@ mod rational;
 mod var;
 
 pub use inf_rational::{InfRational, inf, inf_i};
-pub use lin::{Lin, v, vc};
+pub use lin::{Lin, vc};
 pub use rational::Rational;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -658,7 +658,7 @@ impl fmt::Display for Engine {
 
 #[cfg(test)]
 mod tests {
-    use crate::lin::{v, vc};
+    use crate::lin::vc;
 
     use super::*;
 
@@ -715,7 +715,7 @@ mod tests {
     fn single_var_le_sets_ub() {
         let mut e = Engine::new();
         let x = e.add_var();
-        assert!(e.new_le(&v(x), &Lin::from(10), None).is_ok()); // x <= 10
+        assert!(e.new_le(&Lin::from(x), &Lin::from(10), None).is_ok()); // x <= 10
         assert!(e.ub(x) <= &InfRational::from(Rational::from(10))); // or exact depending on inf()
         assert!(e.check().is_ok());
     }
@@ -724,7 +724,7 @@ mod tests {
     fn single_var_gt_sets_lb() {
         let mut e = Engine::new();
         let x = e.add_var();
-        assert!(e.new_gt(&v(x), &Lin::from(5), true, None).is_ok()); // x > 5
+        assert!(e.new_gt(&Lin::from(x), &Lin::from(5), true, None).is_ok()); // x > 5
         assert!(e.lb(x) >= &InfRational::from(Rational::from(5))); // adjusted for strict
         assert!(e.check().is_ok());
     }
@@ -733,7 +733,7 @@ mod tests {
     fn single_var_eq_sets_exact() {
         let mut e = Engine::new();
         let x = e.add_var();
-        assert!(e.new_eq(&v(x), &Lin::from(42), None).is_ok());
+        assert!(e.new_eq(&Lin::from(x), &Lin::from(42), None).is_ok());
         assert_eq!(e.lb(x), e.ub(x));
         assert_eq!(e.val(x), &InfRational::from(Rational::from(42)));
     }
@@ -744,8 +744,8 @@ mod tests {
         let x = e.add_var();
         let c0 = e.add_guard();
         let c1 = e.add_guard();
-        assert!(e.new_le(&v(x), &Lin::from(10), Some(c0)).is_ok());
-        assert!(e.new_gt(&v(x), &Lin::from(15), true, Some(c1)).is_ok());
+        assert!(e.new_le(&Lin::from(x), &Lin::from(10), Some(c0)).is_ok());
+        assert!(e.new_gt(&Lin::from(x), &Lin::from(15), true, Some(c1)).is_ok());
         assert!(e.assert(c0).is_ok());
         let Err(PropagationError::Conflict(conflict)) = e.assert(c1) else { panic!("expected conflict") };
         assert!(conflict.contains(&c0));
@@ -769,8 +769,8 @@ mod tests {
         let mut e = Engine::new();
         let x = e.add_var();
         let y = e.add_var();
-        assert!(e.new_eq(&v(x), &(v(y) + Lin::from(3)), None).is_ok()); // x = y + 3  (adjust)
-        assert!(e.new_lt(&v(y), &Lin::from(0), false, None).is_ok()); // y <= 0
+        assert!(e.new_eq(&Lin::from(x), &(Lin::from(y) + Lin::from(3)), None).is_ok()); // x = y + 3  (adjust)
+        assert!(e.new_lt(&Lin::from(y), &Lin::from(0), false, None).is_ok()); // y <= 0
         assert!(e.check().is_ok());
         // x should now be <= 3
     }
@@ -781,9 +781,9 @@ mod tests {
         let x = e.add_var();
         let y = e.add_var();
         // Make y basic: y = 10 - x
-        assert!(e.new_eq(&v(y), &(Lin::from(10) - v(x)), None).is_ok());
+        assert!(e.new_eq(&Lin::from(y), &(Lin::from(10) - Lin::from(x)), None).is_ok());
         // Violate y >= 12
-        assert!(e.new_ge(&v(y), &Lin::from(12), None).is_ok());
+        assert!(e.new_ge(&Lin::from(y), &Lin::from(12), None).is_ok());
         assert!(e.check().is_ok());
     }
 
@@ -791,8 +791,8 @@ mod tests {
     fn unsat_after_failed_pivot() {
         let mut e = Engine::new();
         let x = e.add_var();
-        assert!(e.new_le(&v(x), &Lin::from(0), None).is_ok());
-        let Err(PropagationError::Conflict(conflict)) = e.new_gt(&v(x), &Lin::from(10), false, None) else { panic!("expected conflict") };
+        assert!(e.new_le(&Lin::from(x), &Lin::from(0), None).is_ok());
+        let Err(PropagationError::Conflict(conflict)) = e.new_gt(&Lin::from(x), &Lin::from(10), false, None) else { panic!("expected conflict") };
         assert!(conflict.is_empty()); // no named constraints
     }
 
@@ -800,7 +800,7 @@ mod tests {
     fn strict_adjustment() {
         let mut e = Engine::new();
         let x = e.add_var();
-        assert!(e.new_lt(&v(x), &Lin::from(0), true, None).is_ok());
+        assert!(e.new_lt(&Lin::from(x), &Lin::from(0), true, None).is_ok());
         assert!(e.check().is_ok());
     }
 
@@ -820,7 +820,7 @@ mod tests {
             *called_clone.lock().unwrap() = true;
         });
 
-        assert!(engine.new_eq(&v(a), &Lin::from(5), None).is_ok());
+        assert!(engine.new_eq(&Lin::from(a), &Lin::from(5), None).is_ok());
         assert!(engine.check().is_ok());
         assert!(*called.lock().unwrap());
     }
@@ -832,8 +832,8 @@ mod tests {
         let y = e.add_var();
         assert!(e.overlap(x, y)); // both [-inf, +inf]
 
-        assert!(e.new_le(&v(x), &Lin::from(10), None).is_ok());
-        assert!(e.new_ge(&v(y), &Lin::from(20), None).is_ok());
+        assert!(e.new_le(&Lin::from(x), &Lin::from(10), None).is_ok());
+        assert!(e.new_ge(&Lin::from(y), &Lin::from(20), None).is_ok());
         assert!(!e.overlap(x, y)); // [?,10] and [20,?] no overlap
     }
 
@@ -851,8 +851,8 @@ mod tests {
         let x = e.add_var();
         let c0 = e.add_guard();
         let c1 = e.add_guard();
-        assert!(e.new_le(&v(x), &Lin::from(10), Some(c0)).is_ok());
-        assert!(e.new_le(&v(x), &Lin::from(20), Some(c1)).is_ok()); // looser → redundant
+        assert!(e.new_le(&Lin::from(x), &Lin::from(10), Some(c0)).is_ok());
+        assert!(e.new_le(&Lin::from(x), &Lin::from(20), Some(c1)).is_ok()); // looser → redundant
         assert!(e.check().is_ok());
     }
 
@@ -861,8 +861,8 @@ mod tests {
         let mut e = Engine::new();
         let x = e.add_var();
         let c0 = e.add_guard();
-        assert!(e.new_le(&v(x), &Lin::from(20), Some(c0)).is_ok());
-        assert!(e.new_le(&v(x), &Lin::from(10), Some(c0)).is_ok());
+        assert!(e.new_le(&Lin::from(x), &Lin::from(20), Some(c0)).is_ok());
+        assert!(e.new_le(&Lin::from(x), &Lin::from(10), Some(c0)).is_ok());
         assert!(e.check().is_ok());
         e.retract(c0);
         assert_eq!(e.ub(x), &InfRational::POSITIVE_INFINITY);
@@ -880,9 +880,9 @@ mod tests {
         let c1 = e.add_guard();
 
         // y >= x + 1
-        assert!(e.new_ge(&v(y), &(v(x) + Lin::from(1)), Some(c0)).is_ok());
+        assert!(e.new_ge(&Lin::from(y), &(Lin::from(x) + Lin::from(1)), Some(c0)).is_ok());
         // z >= y + 1
-        assert!(e.new_ge(&v(z), &(v(y) + Lin::from(1)), Some(c1)).is_ok());
+        assert!(e.new_ge(&Lin::from(z), &(Lin::from(y) + Lin::from(1)), Some(c1)).is_ok());
         assert!(e.check().is_ok());
         e.retract(c0);
         // After retracting c0, y and z should no longer have the bounds that depended on c0
@@ -890,7 +890,7 @@ mod tests {
         assert_eq!(e.lb(z), &InfRational::NEGATIVE_INFINITY);
 
         // x >= z + 1
-        assert!(e.new_ge(&v(x), &(v(z) + Lin::from(1)), None).is_ok());
+        assert!(e.new_ge(&Lin::from(x), &(Lin::from(z) + Lin::from(1)), None).is_ok());
         assert!(e.check().is_ok());
     }
 
@@ -905,15 +905,15 @@ mod tests {
         let c2 = e.add_guard();
 
         // x + y >= 1
-        assert!(e.new_ge(&(v(x) + v(y)), &Lin::from(1), Some(c0)).is_ok());
+        assert!(e.new_ge(&(Lin::from(x) + Lin::from(y)), &Lin::from(1), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
         // x >= 2
-        assert!(e.new_ge(&v(x), &Lin::from(2), Some(c1)).is_ok());
+        assert!(e.new_ge(&Lin::from(x), &Lin::from(2), Some(c1)).is_ok());
         assert!(e.assert(c1).is_ok());
         assert!(e.check().is_ok());
 
         // x + y <= 0
-        assert!(e.new_le(&(v(x) + v(y)), &Lin::from(0), Some(c2)).is_ok());
+        assert!(e.new_le(&(Lin::from(x) + Lin::from(y)), &Lin::from(0), Some(c2)).is_ok());
         assert!(e.assert(c2).is_ok());
         let Err(PropagationError::Conflict(conflict)) = e.check() else { panic!("expected conflict") };
         assert!(conflict.contains(&c0));
@@ -929,19 +929,19 @@ mod tests {
         let s2 = e.add_lin_var(vc(x, 1) + vc(y, 1)); // s2 = x + y
 
         let c0 = e.add_guard();
-        assert!(e.new_le(&v(x), &Lin::from(-4), Some(c0)).is_ok()); // x <= -4
+        assert!(e.new_le(&Lin::from(x), &Lin::from(-4), Some(c0)).is_ok()); // x <= -4
         assert!(e.assert(c0).is_ok());
         assert!(e.check().is_ok());
         let c1 = e.add_guard();
-        assert!(e.new_ge(&v(x), &Lin::from(-8), Some(c1)).is_ok()); // x >= -8
+        assert!(e.new_ge(&Lin::from(x), &Lin::from(-8), Some(c1)).is_ok()); // x >= -8
         assert!(e.assert(c1).is_ok());
         assert!(e.check().is_ok());
         let c2 = e.add_guard();
-        assert!(e.new_le(&v(s1), &Lin::from(1), Some(c2)).is_ok()); // s1 <= 1
+        assert!(e.new_le(&Lin::from(s1), &Lin::from(1), Some(c2)).is_ok()); // s1 <= 1
         assert!(e.assert(c2).is_ok());
         assert!(e.check().is_ok());
         let c3 = e.add_guard();
-        assert!(e.new_ge(&v(s2), &Lin::from(-3), Some(c3)).is_ok()); // s2 >= -3
+        assert!(e.new_ge(&Lin::from(s2), &Lin::from(-3), Some(c3)).is_ok()); // s2 >= -3
         assert!(e.assert(c3).is_ok());
         let Err(PropagationError::Conflict(conflict)) = e.check() else { panic!("expected conflict") };
         assert!(conflict.contains(&c0));
@@ -955,7 +955,7 @@ mod tests {
         let x = e.add_var();
         let c0 = e.add_guard();
         // Add constraint: x >= 5
-        assert!(e.new_ge(&v(x), &Lin::from(5), Some(c0)).is_ok());
+        assert!(e.new_ge(&Lin::from(x), &Lin::from(5), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
         assert!(e.check().is_ok());
         assert!(e.lb(x) == &InfRational::from(Rational::from(5)));
@@ -982,9 +982,9 @@ mod tests {
         let x = e.add_var();
         let c0 = e.add_guard();
         let c1 = e.add_guard();
-        assert!(e.new_le(&v(x), &Lin::from(20), Some(c0)).is_ok());
+        assert!(e.new_le(&Lin::from(x), &Lin::from(20), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
-        assert!(e.new_le(&v(x), &Lin::from(10), Some(c1)).is_ok()); // tighter
+        assert!(e.new_le(&Lin::from(x), &Lin::from(10), Some(c1)).is_ok()); // tighter
         assert!(e.assert(c1).is_ok());
         assert!(e.ub(x) <= &InfRational::from(Rational::from(10)));
     }
@@ -1003,10 +1003,10 @@ mod tests {
         let y = e.add_var();
 
         // Set bounds: x in [2, 5], y in [3, 7]
-        assert!(e.new_ge(&v(x), &Lin::from(2), None).is_ok());
-        assert!(e.new_le(&v(x), &Lin::from(5), None).is_ok());
-        assert!(e.new_ge(&v(y), &Lin::from(3), None).is_ok());
-        assert!(e.new_le(&v(y), &Lin::from(7), None).is_ok());
+        assert!(e.new_ge(&Lin::from(x), &Lin::from(2), None).is_ok());
+        assert!(e.new_le(&Lin::from(x), &Lin::from(5), None).is_ok());
+        assert!(e.new_ge(&Lin::from(y), &Lin::from(3), None).is_ok());
+        assert!(e.new_le(&Lin::from(y), &Lin::from(7), None).is_ok());
 
         // Test lin_lb with negative coefficient: 10 - 2*x + 3*y
         // lb = 10 - 2*ub(x) + 3*lb(y) = 10 - 2*5 + 3*3 = 10 - 10 + 9 = 9
@@ -1028,7 +1028,7 @@ mod tests {
         let c1 = e.add_guard();
 
         // Set initial lower bound
-        assert!(e.new_ge(&v(x), &Lin::from(5), Some(c0)).is_ok());
+        assert!(e.new_ge(&Lin::from(x), &Lin::from(5), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
         assert_eq!(e.lb(x), &InfRational::from(Rational::from(5)));
 
@@ -1049,7 +1049,7 @@ mod tests {
         let x = e.add_var();
         let c0 = e.add_guard();
 
-        assert!(e.new_ge(&v(x), &Lin::from(5), Some(c0)).is_ok());
+        assert!(e.new_ge(&Lin::from(x), &Lin::from(5), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
         assert_eq!(e.lb(x), &InfRational::from(Rational::from(5)));
 
@@ -1073,7 +1073,7 @@ mod tests {
         let c1 = e.add_guard();
 
         // Set initial upper bound
-        assert!(e.new_le(&v(x), &Lin::from(10), Some(c0)).is_ok());
+        assert!(e.new_le(&Lin::from(x), &Lin::from(10), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
         assert_eq!(e.ub(x), &InfRational::from(Rational::from(10)));
 
@@ -1094,7 +1094,7 @@ mod tests {
         let x = e.add_var();
         let c0 = e.add_guard();
 
-        assert!(e.new_le(&v(x), &Lin::from(10), Some(c0)).is_ok());
+        assert!(e.new_le(&Lin::from(x), &Lin::from(10), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
         assert_eq!(e.ub(x), &InfRational::from(Rational::from(10)));
 
@@ -1117,18 +1117,18 @@ mod tests {
         let y = e.add_var();
 
         // Make y basic: y = x + 5
-        assert!(e.new_eq(&v(y), &(v(x) + Lin::from(5)), None).is_ok());
+        assert!(e.new_eq(&Lin::from(y), &(Lin::from(x) + Lin::from(5)), None).is_ok());
 
         let c0 = e.add_guard();
         let c1 = e.add_guard();
 
         // Constrain x: x <= 0
-        assert!(e.new_le(&v(x), &Lin::from(0), Some(c0)).is_ok());
+        assert!(e.new_le(&Lin::from(x), &Lin::from(0), Some(c0)).is_ok());
         assert!(e.assert(c0).is_ok());
 
         // Constrain y to conflict: y >= 10
         // This means x + 5 >= 10, so x >= 5, which conflicts with x <= 0
-        assert!(e.new_ge(&v(y), &Lin::from(10), Some(c1)).is_ok());
+        assert!(e.new_ge(&Lin::from(y), &Lin::from(10), Some(c1)).is_ok());
         assert!(e.assert(c1).is_ok());
         assert!(e.check().is_err());
     }
@@ -1177,10 +1177,10 @@ mod tests {
         let y = e.add_var();
 
         // Make y basic: y = 10 - x (so when x increases, y decreases)
-        assert!(e.new_eq(&v(y), &(Lin::from(10) - v(x)), None).is_ok());
+        assert!(e.new_eq(&Lin::from(y), &(Lin::from(10) - Lin::from(x)), None).is_ok());
 
         // Set bounds that will require pivoting
-        assert!(e.new_le(&v(y), &Lin::from(5), None).is_ok()); // y <= 5, so 10 - x <= 5, x >= 5
+        assert!(e.new_le(&Lin::from(y), &Lin::from(5), None).is_ok()); // y <= 5, so 10 - x <= 5, x >= 5
         assert!(e.check().is_ok());
 
         // y should be at most 5
@@ -1194,12 +1194,12 @@ mod tests {
         let y = e.add_var();
 
         // Create linear variables
-        let sum = e.add_lin_var(v(x) + v(y));
-        let diff = e.add_lin_var(v(x) - v(y));
+        let sum = e.add_lin_var(Lin::from(x) + Lin::from(y));
+        let diff = e.add_lin_var(Lin::from(x) - Lin::from(y));
 
         // Set constraints on linear variables
-        assert!(e.new_le(&v(sum), &Lin::from(10), None).is_ok());
-        assert!(e.new_ge(&v(diff), &Lin::from(2), None).is_ok());
+        assert!(e.new_le(&Lin::from(sum), &Lin::from(10), None).is_ok());
+        assert!(e.new_ge(&Lin::from(diff), &Lin::from(2), None).is_ok());
         assert!(e.check().is_ok());
     }
 
@@ -1218,7 +1218,7 @@ mod tests {
         let x = e.add_var();
 
         // Single variable equation: x = 5
-        assert!(e.new_eq(&v(x), &Lin::from(5), None).is_ok());
+        assert!(e.new_eq(&Lin::from(x), &Lin::from(5), None).is_ok());
         assert_eq!(e.val(x), &InfRational::from(Rational::from(5)));
         assert_eq!(e.lb(x), &InfRational::from(Rational::from(5)));
         assert_eq!(e.ub(x), &InfRational::from(Rational::from(5)));
@@ -1231,7 +1231,7 @@ mod tests {
         let y = e.add_var();
 
         // Multiple variable equation: x + y = 10
-        assert!(e.new_eq(&(v(x) + v(y)), &Lin::from(10), None).is_ok());
+        assert!(e.new_eq(&(Lin::from(x) + Lin::from(y)), &Lin::from(10), None).is_ok());
 
         // A slack variable should have been created
         assert!(e.assignments.len() > 2);
@@ -1243,7 +1243,7 @@ mod tests {
         let x = e.add_var();
 
         // x >= 5
-        assert!(e.new_ge(&v(x), &Lin::from(5), None).is_ok());
+        assert!(e.new_ge(&Lin::from(x), &Lin::from(5), None).is_ok());
         assert_eq!(e.lb(x), &InfRational::from(Rational::from(5)));
     }
 
@@ -1253,7 +1253,7 @@ mod tests {
         let x = e.add_var();
 
         // x > 5 (strict)
-        assert!(e.new_gt(&v(x), &Lin::from(5), true, None).is_ok());
+        assert!(e.new_gt(&Lin::from(x), &Lin::from(5), true, None).is_ok());
         // Lower bound should be adjusted for strict inequality
         assert!(e.lb(x) > &InfRational::from(Rational::from(5)));
     }
@@ -1262,7 +1262,7 @@ mod tests {
     fn test_get_conflict_when_no_conflict() {
         let mut e = Engine::new();
         let x = e.add_var();
-        assert!(e.new_le(&v(x), &Lin::from(10), None).is_ok());
+        assert!(e.new_le(&Lin::from(x), &Lin::from(10), None).is_ok());
         assert!(e.check().is_ok());
     }
 
@@ -1276,10 +1276,10 @@ mod tests {
         let g2 = engine.add_guard();
 
         // Assert constraints in order: g1 first, then g2
-        engine.new_ge(&v(x), &Lin::from(5), Some(g1)).ok(); // x >= 5
+        engine.new_ge(&Lin::from(x), &Lin::from(5), Some(g1)).ok(); // x >= 5
         engine.assert(g1).ok(); // [1st]
 
-        engine.new_le(&v(y), &Lin::from(10), Some(g2)).ok(); // y <= 10
+        engine.new_le(&Lin::from(y), &Lin::from(10), Some(g2)).ok(); // y <= 10
         engine.assert(g2).ok(); // [2nd]
 
         // Key point: retract the FIRST constraint (g1), leaving g2 active

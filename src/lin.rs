@@ -84,9 +84,12 @@ impl From<i64> for Lin {
     }
 }
 
-pub fn v(idx: VarId) -> Lin {
-    Lin::new_var(idx, Rational::from(1))
+impl From<VarId> for Lin {
+    fn from(var: VarId) -> Self {
+        Lin::new_var(var, Rational::from(1))
+    }
 }
+
 pub fn vc(idx: VarId, coeff: i64) -> Lin {
     Lin::new_var(idx, Rational::from(coeff))
 }
