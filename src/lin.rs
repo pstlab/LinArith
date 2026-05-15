@@ -26,10 +26,6 @@ impl Lin {
         Lin::new(vars, Rational::ZERO)
     }
 
-    pub fn new_const(constant: Rational) -> Self {
-        Lin::new(HashMap::new(), constant)
-    }
-
     /// Substitutes a variable with another linear expression.
     ///
     /// If this expression is $L$ and the substitution is $x_i = E$, this method
@@ -76,9 +72,18 @@ impl Lin {
     }
 }
 
-pub fn c(n: i64) -> Lin {
-    Lin::new_const(Rational::from(n))
+impl From<Rational> for Lin {
+    fn from(value: Rational) -> Self {
+        Lin::new(HashMap::new(), value)
+    }
 }
+
+impl From<i64> for Lin {
+    fn from(value: i64) -> Self {
+        Lin::new(HashMap::new(), Rational::from(value))
+    }
+}
+
 pub fn v(idx: VarId) -> Lin {
     Lin::new_var(idx, Rational::from(1))
 }
