@@ -29,6 +29,7 @@ impl InfRational {
     pub const POSITIVE_INFINITY: Self = Self { rat: Rational::POSITIVE_INFINITY, inf: Rational::ZERO };
     pub const NEGATIVE_INFINITY: Self = Self { rat: Rational::NEGATIVE_INFINITY, inf: Rational::ZERO };
     pub const ZERO: Self = Self { rat: Rational::ZERO, inf: Rational::ZERO };
+    pub const EPSILON: Self = Self { rat: Rational::ZERO, inf: Rational::ONE };
 }
 
 impl From<Rational> for InfRational {
@@ -395,10 +396,6 @@ impl Display for InfRational {
     }
 }
 
-pub fn inf_i(arg: i64) -> InfRational {
-    InfRational::new(Rational::ZERO, Rational::from(arg))
-}
-
 pub fn inf(rat: Rational, inf: Rational) -> InfRational {
     InfRational::new(rat, inf)
 }
@@ -434,26 +431,26 @@ mod tests {
 
     #[test]
     fn test_ord() {
-        let ir1 = inf_i(1); // 1ε
+        let ir1 = InfRational::EPSILON; // 1ε
         let ir2 = InfRational::from(Rational::from(100)); // 100
 
         // 1ε < 100
         assert!(ir1 < ir2);
 
-        let ir3 = inf_i(-1); // -1ε
+        let ir3 = -InfRational::EPSILON; // -1ε
         assert!(ir3 < ir2);
         assert!(ir3 < ir1);
 
-        let ir4 = inf(Rational::from(1), Rational::from(1)); // 1 + 1ε
+        let ir4 = inf(Rational::ONE, Rational::ONE); // 1 + 1ε
         // 1 + 1ε > 0 + 1ε
         assert!(ir4 > ir1);
     }
 
     #[test]
     fn test_ord_with_primitive_and_rational() {
-        let pos_inf = inf_i(1);
-        let neg_inf = inf_i(-1);
-        let zero = 0;
+        let pos_inf = InfRational::EPSILON; // 1ε
+        let neg_inf = -InfRational::EPSILON; // -1ε
+        let zero = InfRational::ZERO;
         let rat_ten = Rational::from(10);
 
         // 0 < 0 + 1ε
@@ -469,7 +466,7 @@ mod tests {
 
     #[test]
     fn test_arithmetic() {
-        let a = inf(Rational::from(1), Rational::from(2)); // 1 + 2ε
+        let a = inf(Rational::ONE, Rational::from(2)); // 1 + 2ε
         let b = inf(Rational::from(3), Rational::from(4)); // 3 + 4ε
 
         // Add
@@ -483,7 +480,7 @@ mod tests {
         assert_eq!(a * &scalar, inf(Rational::from(2), Rational::from(4)));
 
         // Div by scalar
-        assert_eq!(a / &scalar, inf(Rational::new(1, 2), Rational::from(1)));
+        assert_eq!(a / &scalar, inf(Rational::new(1, 2), Rational::ONE));
     }
 
     #[test]
@@ -523,7 +520,7 @@ mod tests {
 
     #[test]
     fn test_partial_ord_rational() {
-        let ir = inf(Rational::from(5), Rational::from(1)); // 5 + 1ε
+        let ir = inf(Rational::from(5), Rational::ONE); // 5 + 1ε
         let rat_five = Rational::from(5);
         let rat_six = Rational::from(6);
 
@@ -539,7 +536,7 @@ mod tests {
 
     #[test]
     fn test_partial_ord_i64() {
-        let ir = inf(Rational::from(5), Rational::from(1)); // 5 + 1ε
+        let ir = inf(Rational::from(5), Rational::ONE); // 5 + 1ε
 
         // ir > 5
         assert!(ir > 5);
@@ -557,7 +554,7 @@ mod tests {
 
     #[test]
     fn test_add_variations() {
-        let a = inf(Rational::from(1), Rational::from(2));
+        let a = inf(Rational::ONE, Rational::from(2));
         let b = inf(Rational::from(3), Rational::from(4));
 
         // Test &InfRational + InfRational
@@ -576,7 +573,7 @@ mod tests {
     #[test]
     fn test_sub_variations() {
         let a = inf(Rational::from(5), Rational::from(3));
-        let b = inf(Rational::from(2), Rational::from(1));
+        let b = inf(Rational::from(2), Rational::ONE);
 
         // Test &InfRational - InfRational
         let res1 = &a - b;
@@ -746,33 +743,33 @@ mod tests {
     #[test]
     fn test_assign_ops() {
         // Test AddAssign with InfRational
-        let mut ir1 = inf(Rational::from(1), Rational::from(2));
+        let mut ir1 = inf(Rational::ONE, Rational::from(2));
         ir1 += inf(Rational::from(3), Rational::from(4));
         assert_eq!(ir1, inf(Rational::from(4), Rational::from(6)));
 
         // Test AddAssign with &InfRational
-        let mut ir2 = inf(Rational::from(1), Rational::from(2));
+        let mut ir2 = inf(Rational::ONE, Rational::from(2));
         ir2 += &inf(Rational::from(3), Rational::from(4));
         assert_eq!(ir2, inf(Rational::from(4), Rational::from(6)));
 
         // Test AddAssign with &Rational
-        let mut ir3 = inf(Rational::from(1), Rational::from(2));
+        let mut ir3 = inf(Rational::ONE, Rational::from(2));
         ir3 += &Rational::from(5);
         assert_eq!(ir3, inf(Rational::from(6), Rational::from(2)));
 
         // Test AddAssign with i64
-        let mut ir4 = inf(Rational::from(1), Rational::from(2));
+        let mut ir4 = inf(Rational::ONE, Rational::from(2));
         ir4 += 7;
         assert_eq!(ir4, inf(Rational::from(8), Rational::from(2)));
 
         // Test SubAssign with InfRational
         let mut ir5 = inf(Rational::from(5), Rational::from(6));
-        ir5 -= inf(Rational::from(1), Rational::from(2));
+        ir5 -= inf(Rational::ONE, Rational::from(2));
         assert_eq!(ir5, inf(Rational::from(4), Rational::from(4)));
 
         // Test SubAssign with &InfRational
         let mut ir6 = inf(Rational::from(5), Rational::from(6));
-        ir6 -= &inf(Rational::from(1), Rational::from(2));
+        ir6 -= &inf(Rational::ONE, Rational::from(2));
         assert_eq!(ir6, inf(Rational::from(4), Rational::from(4)));
 
         // Test SubAssign with &Rational
@@ -863,13 +860,13 @@ mod tests {
         assert_eq!(ir2, InfRational::from(Rational::new(3, 4)));
 
         // Test inf_i
-        let ir3 = inf_i(5);
+        let ir3 = inf(Rational::ZERO, Rational::from(5));
         assert_eq!(ir3.rat, Rational::ZERO);
         assert_eq!(ir3.inf, Rational::from(5));
 
         // Test inf
-        let ir4 = inf(Rational::from(1), Rational::from(2));
-        assert_eq!(ir4.rat, Rational::from(1));
+        let ir4 = inf(Rational::ONE, Rational::from(2));
+        assert_eq!(ir4.rat, Rational::ONE);
         assert_eq!(ir4.inf, Rational::from(2));
     }
 }

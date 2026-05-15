@@ -86,7 +86,7 @@ impl From<i64> for Lin {
 
 impl From<VarId> for Lin {
     fn from(var: VarId) -> Self {
-        Lin::new_var(var, Rational::from(1))
+        Lin::new_var(var, Rational::ONE)
     }
 }
 
@@ -104,7 +104,7 @@ impl fmt::Display for Lin {
         for (var, coeff) in terms {
             if first {
                 if coeff.is_positive() {
-                    if coeff == &Rational::from(1) {
+                    if coeff == &Rational::ONE {
                         write!(f, "{}", var)?;
                     } else {
                         write!(f, "{}*{}", coeff, var)?;
@@ -116,7 +116,7 @@ impl fmt::Display for Lin {
                 }
                 first = false;
             } else if coeff.is_positive() {
-                if coeff == &Rational::from(1) {
+                if coeff == &Rational::ONE {
                     write!(f, " + {}", var)?;
                 } else {
                     write!(f, " + {}*{}", coeff, var)?;
@@ -596,7 +596,7 @@ mod tests {
 
     #[test]
     fn test_add_lin() {
-        let lin1 = Lin::new(HashMap::from([(VarId(1), Rational::from(1))]), Rational::from(2));
+        let lin1 = Lin::new(HashMap::from([(VarId(1), Rational::ONE)]), Rational::from(2));
         let lin2 = Lin::new(HashMap::from([(VarId(1), Rational::from(2)), (VarId(2), Rational::from(3))]), Rational::from(4));
 
         let sum = lin1 + lin2;
@@ -608,16 +608,16 @@ mod tests {
 
     #[test]
     fn test_add_rational() {
-        let lin = Lin::new(HashMap::from([(VarId(1), Rational::from(1))]), Rational::from(2));
+        let lin = Lin::new(HashMap::from([(VarId(1), Rational::ONE)]), Rational::from(2));
         let sum = lin + Rational::from(3);
-        let expected = Lin::new(HashMap::from([(VarId(1), Rational::from(1))]), Rational::from(5));
+        let expected = Lin::new(HashMap::from([(VarId(1), Rational::ONE)]), Rational::from(5));
 
         assert_eq!(sum, expected);
     }
 
     #[test]
     fn test_sub_lin() {
-        let lin1 = Lin::new(HashMap::from([(VarId(1), Rational::from(1))]), Rational::from(2));
+        let lin1 = Lin::new(HashMap::from([(VarId(1), Rational::ONE)]), Rational::from(2));
         let lin2 = Lin::new(HashMap::from([(VarId(1), Rational::from(2)), (VarId(2), Rational::from(3))]), Rational::from(4));
 
         let diff = lin1 - lin2;
@@ -629,9 +629,9 @@ mod tests {
 
     #[test]
     fn test_sub_rational() {
-        let lin = Lin::new(HashMap::from([(VarId(1), Rational::from(1))]), Rational::from(2));
+        let lin = Lin::new(HashMap::from([(VarId(1), Rational::ONE)]), Rational::from(2));
         let diff = lin - Rational::from(3);
-        let expected = Lin::new(HashMap::from([(VarId(1), Rational::from(1))]), Rational::from(-1));
+        let expected = Lin::new(HashMap::from([(VarId(1), Rational::ONE)]), Rational::from(-1));
 
         assert_eq!(diff, expected);
     }
@@ -640,14 +640,14 @@ mod tests {
     fn test_mul_rational() {
         let lin = Lin::new(HashMap::from([(VarId(1), Rational::new(1, 2))]), Rational::new(3, 4));
         let product = lin * Rational::from(2);
-        let expected = Lin::new(HashMap::from([(VarId(1), Rational::from(1))]), Rational::new(3, 2));
+        let expected = Lin::new(HashMap::from([(VarId(1), Rational::ONE)]), Rational::new(3, 2));
 
         assert_eq!(product, expected);
     }
 
     #[test]
     fn test_div_rational() {
-        let lin = Lin::new(HashMap::from([(VarId(1), Rational::from(1))]), Rational::new(3, 2));
+        let lin = Lin::new(HashMap::from([(VarId(1), Rational::ONE)]), Rational::new(3, 2));
         let quotient = lin / Rational::from(2);
         let expected = Lin::new(HashMap::from([(VarId(1), Rational::new(1, 2))]), Rational::new(3, 4));
 
@@ -668,7 +668,7 @@ mod tests {
         // 2*x1 + 3*x2 + 5
         let mut lin1 = Lin::new(HashMap::from([(VarId(1), Rational::from(2)), (VarId(2), Rational::from(3))]), Rational::from(5));
         // substitute x1 with (4*x3 + 1)
-        let lin_sub = Lin::new(HashMap::from([(VarId(3), Rational::from(4))]), Rational::from(1));
+        let lin_sub = Lin::new(HashMap::from([(VarId(3), Rational::from(4))]), Rational::ONE);
         lin1.substitute(VarId(1), &lin_sub);
         // expected = 3*x2 + 8*x3 + 7
         let expected = Lin::new(HashMap::from([(VarId(2), Rational::from(3)), (VarId(3), Rational::from(8))]), Rational::from(7));
@@ -681,7 +681,7 @@ mod tests {
         // 2*x1 + 3*x2
         let mut lin1 = Lin::new(HashMap::from([(VarId(1), Rational::from(2)), (VarId(2), Rational::from(3))]), Rational::ZERO);
         // substitute x1 with (x2 + 1)
-        let lin_sub = Lin::new(HashMap::from([(VarId(2), Rational::from(1))]), Rational::from(1));
+        let lin_sub = Lin::new(HashMap::from([(VarId(2), Rational::ONE)]), Rational::ONE);
         lin1.substitute(VarId(1), &lin_sub);
         // expected = 5*x2 + 2
         let expected = Lin::new(HashMap::from([(VarId(2), Rational::from(5))]), Rational::from(2));
@@ -691,7 +691,7 @@ mod tests {
     #[test]
     fn test_substitute_merge_and_cancel() {
         // Original: 1x + 2y + 0
-        let mut expr = Lin::new(HashMap::from([(VarId(1), Rational::from(1)), (VarId(2), Rational::from(2))]), Rational::ZERO);
+        let mut expr = Lin::new(HashMap::from([(VarId(1), Rational::ONE), (VarId(2), Rational::from(2))]), Rational::ZERO);
 
         // Substitution: x = -2y + 10
         let sub = Lin::new(HashMap::from([(VarId(2), Rational::from(-2))]), Rational::from(10));
@@ -707,7 +707,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_substitute_missing_var() {
-        let mut lin = Lin::new(HashMap::from([(VarId(1), Rational::from(1))]), Rational::ZERO);
+        let mut lin = Lin::new(HashMap::from([(VarId(1), Rational::ONE)]), Rational::ZERO);
         let lin_sub = Lin::new(HashMap::new(), Rational::ZERO);
         // Panic: Variable 2 not in lin
         lin.substitute(VarId(2), &lin_sub);
@@ -729,12 +729,12 @@ mod tests {
         assert_eq!(format!("{}", lin3), "-3*x1");
 
         // Test with positive coefficient in later terms
-        let lin4 = Lin::new(HashMap::from([(VarId(1), Rational::from(1)), (VarId(2), Rational::from(3))]), Rational::ZERO);
+        let lin4 = Lin::new(HashMap::from([(VarId(1), Rational::ONE), (VarId(2), Rational::from(3))]), Rational::ZERO);
         let s = format!("{}", lin4);
         assert!(s.contains("+") || s.contains("x1") && s.contains("x2"));
 
         // Test with coefficient +1 as non-first positive term (line 108)
-        let lin_pos_one = Lin::new(HashMap::from([(VarId(1), Rational::from(2)), (VarId(2), Rational::from(1))]), Rational::ZERO);
+        let lin_pos_one = Lin::new(HashMap::from([(VarId(1), Rational::from(2)), (VarId(2), Rational::ONE)]), Rational::ZERO);
         let s = format!("{}", lin_pos_one);
         // Should contain "+ x2" (not "+ 1*x2")
         assert!(s.contains("+ x") || s.contains("+x"));
@@ -767,12 +767,12 @@ mod tests {
 
     #[test]
     fn test_add_lin_variations() {
-        let lin1 = Lin::new(HashMap::from([(VarId(1), Rational::from(1))]), Rational::from(2));
+        let lin1 = Lin::new(HashMap::from([(VarId(1), Rational::ONE)]), Rational::from(2));
         let lin2 = Lin::new(HashMap::from([(VarId(2), Rational::from(3))]), Rational::from(4));
 
         // Test Lin + Lin
         let res1 = lin1.clone() + lin2.clone();
-        assert_eq!(res1.vars.get(&VarId(1)), Some(&Rational::from(1)));
+        assert_eq!(res1.vars.get(&VarId(1)), Some(&Rational::ONE));
         assert_eq!(res1.vars.get(&VarId(2)), Some(&Rational::from(3)));
         assert_eq!(res1.known_term, Rational::from(6));
 
@@ -791,7 +791,7 @@ mod tests {
 
     #[test]
     fn test_add_rational_variations() {
-        let lin = Lin::new(HashMap::from([(VarId(1), Rational::from(1))]), Rational::from(2));
+        let lin = Lin::new(HashMap::from([(VarId(1), Rational::ONE)]), Rational::from(2));
         let rat_val = Rational::from(3);
 
         // Test Lin + Rational
@@ -852,7 +852,7 @@ mod tests {
 
     #[test]
     fn test_sub_rational_variations() {
-        let lin = Lin::new(HashMap::from([(VarId(1), Rational::from(1))]), Rational::from(10));
+        let lin = Lin::new(HashMap::from([(VarId(1), Rational::ONE)]), Rational::from(10));
         let rat_val = Rational::from(3);
 
         // Test Lin - Rational
@@ -941,22 +941,22 @@ mod tests {
     #[test]
     fn test_add_assign_variations() {
         // Test AddAssign<Lin>
-        let mut lin1 = Lin::new(HashMap::from([(VarId(1), Rational::from(1))]), Rational::from(2));
+        let mut lin1 = Lin::new(HashMap::from([(VarId(1), Rational::ONE)]), Rational::from(2));
         lin1 += Lin::new(HashMap::from([(VarId(2), Rational::from(3))]), Rational::from(4));
         assert_eq!(lin1.known_term, Rational::from(6));
 
         // Test AddAssign<&Lin>
-        let mut lin2 = Lin::new(HashMap::from([(VarId(1), Rational::from(1))]), Rational::from(2));
+        let mut lin2 = Lin::new(HashMap::from([(VarId(1), Rational::ONE)]), Rational::from(2));
         lin2 += &Lin::new(HashMap::from([(VarId(2), Rational::from(3))]), Rational::from(4));
         assert_eq!(lin2.known_term, Rational::from(6));
 
         // Test AddAssign<Rational>
-        let mut lin3 = Lin::new(HashMap::from([(VarId(1), Rational::from(1))]), Rational::from(2));
+        let mut lin3 = Lin::new(HashMap::from([(VarId(1), Rational::ONE)]), Rational::from(2));
         lin3 += Rational::from(5);
         assert_eq!(lin3.known_term, Rational::from(7));
 
         // Test AddAssign<&Rational>
-        let mut lin4 = Lin::new(HashMap::from([(VarId(1), Rational::from(1))]), Rational::from(2));
+        let mut lin4 = Lin::new(HashMap::from([(VarId(1), Rational::ONE)]), Rational::from(2));
         lin4 += &Rational::from(5);
         assert_eq!(lin4.known_term, Rational::from(7));
     }
@@ -975,12 +975,12 @@ mod tests {
         assert_eq!(lin2.known_term, Rational::from(7));
 
         // Test SubAssign<Rational>
-        let mut lin3 = Lin::new(HashMap::from([(VarId(1), Rational::from(1))]), Rational::from(10));
+        let mut lin3 = Lin::new(HashMap::from([(VarId(1), Rational::ONE)]), Rational::from(10));
         lin3 -= Rational::from(3);
         assert_eq!(lin3.known_term, Rational::from(7));
 
         // Test SubAssign<&Rational>
-        let mut lin4 = Lin::new(HashMap::from([(VarId(1), Rational::from(1))]), Rational::from(10));
+        let mut lin4 = Lin::new(HashMap::from([(VarId(1), Rational::ONE)]), Rational::from(10));
         lin4 -= &Rational::from(3);
         assert_eq!(lin4.known_term, Rational::from(7));
     }

@@ -71,6 +71,7 @@ impl Rational {
     pub const POSITIVE_INFINITY: Self = Self { num: 1, den: 0 };
     pub const NEGATIVE_INFINITY: Self = Self { num: -1, den: 0 };
     pub const ZERO: Self = Self { num: 0, den: 1 };
+    pub const ONE: Self = Self { num: 1, den: 1 };
 }
 
 impl From<i64> for Rational {
@@ -517,11 +518,11 @@ mod tests {
         let a = Rational::new(1, 2);
         let b = Rational::new(2, 3);
         assert_eq!(a * &b, Rational::new(1, 3));
-        assert_eq!(a * 2, Rational::from(1));
+        assert_eq!(a * 2, Rational::ONE);
         assert_eq!(&a * &b, Rational::new(1, 3));
-        assert_eq!(&a * 2, Rational::from(1));
-        assert_eq!(2 * &a, Rational::from(1));
-        assert_eq!(2 * a, Rational::from(1));
+        assert_eq!(&a * 2, Rational::ONE);
+        assert_eq!(2 * &a, Rational::ONE);
+        assert_eq!(2 * a, Rational::ONE);
     }
 
     #[test]
@@ -532,7 +533,7 @@ mod tests {
 
         let mut b = Rational::new(1, 2);
         b *= 2;
-        assert_eq!(b, Rational::from(1));
+        assert_eq!(b, Rational::ONE);
     }
 
     #[test]
@@ -614,7 +615,7 @@ mod tests {
     fn test_infinity_arithmetic() {
         let inf = Rational::POSITIVE_INFINITY;
         let neg_inf = Rational::NEGATIVE_INFINITY;
-        let one = Rational::from(1);
+        let one = Rational::ONE;
 
         // Addition involving infinity
         assert_eq!(inf + one, inf);
