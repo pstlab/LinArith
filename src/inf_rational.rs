@@ -32,15 +32,21 @@ impl InfRational {
     pub const EPSILON: Self = Self { rat: Rational::ZERO, inf: Rational::ONE };
 }
 
+impl From<(Rational, Rational)> for InfRational {
+    fn from(arg: (Rational, Rational)) -> Self {
+        InfRational::new(arg.0, arg.1)
+    }
+}
+
 impl From<Rational> for InfRational {
     fn from(arg: Rational) -> Self {
-        InfRational { rat: arg, inf: Rational::ZERO }
+        InfRational::new(arg, Rational::ZERO)
     }
 }
 
 impl From<i64> for InfRational {
     fn from(arg: i64) -> Self {
-        InfRational { rat: Rational::from(arg), inf: Rational::ZERO }
+        InfRational::new(Rational::from(arg), Rational::ZERO)
     }
 }
 

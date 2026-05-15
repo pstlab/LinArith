@@ -20,12 +20,6 @@ impl Lin {
         Lin { vars, known_term }
     }
 
-    pub fn new_var(var: VarId, coeff: Rational) -> Self {
-        let mut vars = HashMap::new();
-        vars.insert(var, coeff);
-        Lin::new(vars, Rational::ZERO)
-    }
-
     /// Substitutes a variable with another linear expression.
     ///
     /// If this expression is $L$ and the substitution is $x_i = E$, this method
@@ -86,12 +80,8 @@ impl From<i64> for Lin {
 
 impl From<VarId> for Lin {
     fn from(var: VarId) -> Self {
-        Lin::new_var(var, Rational::ONE)
+        Lin::new(HashMap::from([(var, Rational::ONE)]), Rational::ZERO)
     }
-}
-
-pub fn vc(idx: VarId, coeff: i64) -> Lin {
-    Lin::new_var(idx, Rational::from(coeff))
 }
 
 impl fmt::Display for Lin {

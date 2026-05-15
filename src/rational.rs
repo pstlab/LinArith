@@ -74,6 +74,12 @@ impl Rational {
     pub const ONE: Self = Self { num: 1, den: 1 };
 }
 
+impl From<(i64, i64)> for Rational {
+    fn from(arg: (i64, i64)) -> Self {
+        Rational::new(arg.0, arg.1)
+    }
+}
+
 impl From<i64> for Rational {
     fn from(arg: i64) -> Self {
         Rational::new(arg, 1)

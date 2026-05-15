@@ -24,7 +24,7 @@ mod rational;
 mod var;
 
 pub use inf_rational::InfRational;
-pub use lin::{Lin, vc};
+pub use lin::Lin;
 pub use rational::Rational;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -658,8 +658,6 @@ impl fmt::Display for Engine {
 
 #[cfg(test)]
 mod tests {
-    use crate::lin::vc;
-
     use super::*;
 
     #[test]
@@ -758,7 +756,7 @@ mod tests {
         let x = e.add_var();
         let y = e.add_var();
         // x + y <= 5
-        let lhs = vc(x, 1) + vc(y, 1);
+        let lhs = Lin::from(x) + Lin::from(y);
         assert!(e.new_le(&lhs, &Lin::from(5), None).is_ok());
         assert!(e.check().is_ok());
         assert!(e.ub(VarId(e.assignments.len() - 1)) <= &InfRational::from(Rational::from(5))); // slack ub
@@ -925,8 +923,8 @@ mod tests {
         let mut e = Engine::new();
         let x = e.add_var();
         let y = e.add_var();
-        let s1 = e.add_lin_var(vc(x, -1) + vc(y, 1)); // s1 = y - x
-        let s2 = e.add_lin_var(vc(x, 1) + vc(y, 1)); // s2 = x + y
+        let s1 = e.add_lin_var(Lin::from(y) - Lin::from(x)); // s1 = y - x
+        let s2 = e.add_lin_var(Lin::from(x) + Lin::from(y)); // s2 = x + y
 
         let c0 = e.add_guard();
         assert!(e.new_le(&Lin::from(x), &Lin::from(-4), Some(c0)).is_ok()); // x <= -4
@@ -1010,7 +1008,7 @@ mod tests {
 
         // Test lin_lb with negative coefficient: 10 - 2*x + 3*y
         // lb = 10 - 2*ub(x) + 3*lb(y) = 10 - 2*5 + 3*3 = 10 - 10 + 9 = 9
-        let lin = Lin::from(10) + vc(x, -2) + vc(y, 3);
+        let lin = Lin::from(10) + Lin::from(x) * Rational::from(-2) + Lin::from(y) * Rational::from(3);
         let lb = e.lin_lb(&lin);
         assert_eq!(lb, InfRational::from(Rational::from(9)));
 
