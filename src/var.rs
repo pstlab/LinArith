@@ -4,7 +4,7 @@ use std::{fmt, ops::Deref};
 pub struct VarId(usize);
 
 impl VarId {
-    pub(crate) fn new(index: usize) -> Self {
+    pub(crate) const fn new(index: usize) -> Self {
         VarId(index)
     }
 }
